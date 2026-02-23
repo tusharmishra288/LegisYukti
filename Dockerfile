@@ -1,6 +1,11 @@
 # 1. Base Image
 FROM python:3.12-slim-bookworm
 
+# Tell uv to use the system python instead of looking for a venv
+ENV UV_SYSTEM_PYTHON=1
+# Ensure output is sent straight to logs
+ENV PYTHONUNBUFFERED=1
+
 # 2. Build Argument (Defaults to 'local', set to 'cloud' for Hugging Face)
 ARG TARGET_ENV=local
 
@@ -29,11 +34,11 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     if [ "$TARGET_ENV" = "cloud" ]; then \
         echo "☁️ Building for Cloud (CPU)..." && \
-        uv pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
-        uv sync --frozen --no-dev --no-install-project; \
+        uv pip install --system --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
+        uv pip install --system --frozen .; \
     else \
         echo "🎮 Building for Local (GPU)..." && \
-        uv sync --frozen --no-dev --no-install-project; \
+        uv pip install --system --frozen .; \
     fi
 
 # 8. Copy project files
