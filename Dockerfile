@@ -34,11 +34,13 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     if [ "$TARGET_ENV" = "cloud" ]; then \
         echo "☁️ Building for Cloud (CPU)..." && \
+        # 1. Install CPU-only Torch first
         uv pip install --system --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
-        uv pip install --system --frozen .; \
+        # 2. Install the rest of the project
+        uv pip install --system . ; \
     else \
         echo "🎮 Building for Local (GPU)..." && \
-        uv pip install --system --frozen .; \
+        uv pip install --system . ; \
     fi
 
 # 8. Copy project files
