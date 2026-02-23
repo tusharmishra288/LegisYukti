@@ -2,7 +2,7 @@ services:
   legal-advisor:
     build:
       context: ..
-      dockerfile: deployment/Dockerfile
+      dockerfile: Dockerfile
       args:
       - TARGET_ENV=local
     container_name: legal_advisor_app
