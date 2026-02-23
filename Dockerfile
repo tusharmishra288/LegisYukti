@@ -6,12 +6,18 @@ ENV UV_SYSTEM_PYTHON=1
 # Ensure output is sent straight to logs
 ENV PYTHONUNBUFFERED=1
 
+# Add this near your other ENV lines in Dockerfile
+ENV PGCHANNELBINDING=disable
+
 # 2. Build Argument (Defaults to 'local', set to 'cloud' for Hugging Face)
 ARG TARGET_ENV=local
 
+# 2. Tell the OS where to find SSL certificates (Critical for Cloud SSL)
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+
 # 3. System dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl libgl1 libglib2.0-0 build-essential && \
+    curl libgl1 libglib2.0-0 build-essential ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 # 4. Install uv
