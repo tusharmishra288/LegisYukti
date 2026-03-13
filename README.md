@@ -50,42 +50,33 @@ The system follows a modular RAG architecture. The runtime behavior is the same 
 
 ### Runtime Architecture (with Deployment)
 
-```text
-Deployment:
-  - Local Docker
-  - Hugging Face Spaces
+```mermaid
+flowchart LR
+    A[Local Docker] --> Z[NyayaAI App]
+    B[Hugging Face Spaces] --> Z
 
-Runtime Flow:
-  User Query
-      ↓
-  Streamlit UI
-      ↓
-  LangGraph Agent
-      ↓
-  ┌───────────────────┐
-  │   Query Type?     │
-  │ (Legal / General) │
-  └───────────────────┘
-      ↓        ↓
-    Legal     General
-    Path      Path
-      ↓         ↓
-  Retrieval   Direct Response
-      ↓
-  Response Generation
-      ↓
-  Groq LLM
-      ↓
-  Citation Check
-      ↓
-  Final Answer
+    Z --> C[LangGraph Agent]
+    C --> D{Query Type?}
+    D -->|Legal| E[Retrieval System]
+    D -->|General| F[Direct Response]
 
-Persistence:
-  - PostgreSQL (chat history + state)
-  - Qdrant (legal document embeddings)
-``` 
+    E --> G[Qdrant Vector DB]
+    G --> H[Legal Documents]
+    E --> I[Response Generation]
 
-> **Note:** The deployment method (Local Docker vs Hugging Face Spaces) only changes where the app runs; the runtime logic (retrieval, LLM, citation auditing) remains the same.
+    F --> I
+    I --> J[Groq LLM]
+    J --> K[Citation Check]
+    K --> L[Final Answer]
+
+    M[PostgreSQL] --> C
+    C --> M
+
+    classDef box fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000;
+    class A,B,Z,C,D,E,F,G,H,I,J,K,L,M box;
+```
+
+> **Note:** Deployment method (Local Docker vs Hugging Face Spaces) only changes where the app runs; the runtime logic (retrieval, LLM, citation auditing) stays the same.
 
 ### Key Components
 
