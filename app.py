@@ -5,6 +5,7 @@ import streamlit as st
 from src.config import DB_URI
 from src.agent import create_graph
 from src.engine import get_vector_store
+from src.keep_alive import start_keep_alive_service
 from langgraph.checkpoint.postgres import PostgresSaver
 from langchain_core.messages import HumanMessage, AIMessage
 from PIL import Image
@@ -99,6 +100,10 @@ def init_system_core():
 
 # Initialize the core system components
 pool, graph = init_system_core()
+
+# Start keep-alive service for Hugging Face Spaces free tier
+# This prevents the app and Qdrant Cloud from sleeping due to inactivity
+keep_alive_service = start_keep_alive_service(interval_minutes=10)
 
 # --- 4. Persistent Logic Utilities ---
 # Utility functions for workspace management and audit logging
@@ -231,6 +236,17 @@ with st.sidebar:
 
     st.markdown('<div class="sidebar-label">Engine Analytics</div>', unsafe_allow_html=True)
     st.markdown(f'''<div class="engine-card"><div style="font-size:12px; margin-bottom:10px;"><span class="pulse-dot"></span><b>Vector Store:</b> Qdrant SSL ✅</div><div style="font-size:11px; color:#94a3b8;"><b>Index Depth:</b> 17 core PDFs<br><b>Status:</b> Ready</div></div>''', unsafe_allow_html=True)
+
+    # Keep-Alive Service Status for Hugging Face Spaces
+    from src.keep_alive import get_keep_alive_status
+    keep_alive_status = get_keep_alive_status()
+    if keep_alive_status:
+        status_icon = "🟢" if keep_alive_status["running"] else "🔴"
+        time_since = keep_alive_status.get("time_since_last_ping")
+        time_str = f"{time_since:.1f}min ago" if time_since else "Never"
+        st.markdown(f'''<div class="engine-card"><div style="font-size:12px; margin-bottom:10px;"><span style="color:#10b981;">{status_icon}</span><b> Keep-Alive Service:</b> Active</div><div style="font-size:11px; color:#94a3b8;"><b>Interval:</b> {keep_alive_status["interval_seconds"]//60}min<br><b>Last Ping:</b> {time_str}</div></div>''', unsafe_allow_html=True)
+    else:
+        st.markdown('''<div class="engine-card"><div style="font-size:12px; margin-bottom:10px;"><span style="color:#ef4444;">🔴</span><b> Keep-Alive Service:</b> Inactive</div><div style="font-size:11px; color:#94a3b8;">Free tier protection disabled</div></div>''', unsafe_allow_html=True)
     
     with st.expander("📚 LEGAL KNOWLEDGE BASE"):
         st.markdown("""
@@ -282,6 +298,11 @@ with st.sidebar:
 
 # --- 7. Main Chat Interface Rendering ---
 # Render the conversation history with audit scores and regeneration capabilities
+
+# Health check endpoint for keep-alive service (accessed via ?health=true)
+if st.query_params.get("health") == "true":
+    st.json({"status": "healthy", "timestamp": time.time(), "service": "NyayaAI"})
+    st.stop()  # Stop execution to return only the JSON response
 
 st.title("⚖️ Legal Advisor System")
 st.markdown('<div class="disclaimer-hero"><b>⚠️ MANDATORY DISCLOSURE:</b> AI research tool only. Statutory results must be cross-verified with Official Gazettes. No attorney-client relationship is formed.</div>', unsafe_allow_html=True)

@@ -42,6 +42,7 @@ An AI-powered legal consultation platform that leverages Retrieval-Augmented Gen
 - **Modern Web Interface**: Clean, professional Streamlit-based chat interface
 - **GPU Acceleration**: Optimized for NVIDIA GPU usage with CUDA support
 - **Persistent Conversations**: PostgreSQL-backed chat history and state management
+- **Free-Tier Keep‑Alive Service**: Automatically pings the app and Qdrant Cloud to prevent Hugging Face Spaces from sleeping (includes `?health=true` endpoint)
 
 ## 🏗️ Architecture
 
