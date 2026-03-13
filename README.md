@@ -48,34 +48,37 @@ An AI-powered legal consultation platform that leverages Retrieval-Augmented Gen
 
 The system follows a modular RAG architecture. The runtime behavior is the same whether deployed locally (Docker) or in the cloud (Hugging Face Spaces), with only the deployment path differing.
 
-### Runtime Architecture (with Deployment)
+### Architecture Diagram
 
 ```mermaid
-flowchart LR
-    A[Local Docker] --> Z[NyayaAI App]
-    B[Hugging Face Spaces] --> Z
+flowchart TB
+    subgraph Deployment
+        A[Local Docker] --> Z[NyayaAI App]
+        B[Hugging Face Spaces] --> Z
+    end
 
-    Z --> C[LangGraph Agent]
-    C --> D{Query Type?}
-    D -->|Legal| E[Retrieval System]
-    D -->|General| F[Direct Response]
+    subgraph Runtime
+        Z --> C[LangGraph Agent]
+        C --> D{Classification}
+        D -->|"LEGAL"| E[Retrieve Legal Context]
+        D -->|"CHAT"| F[Chat Persona Response]
 
-    E --> G[Qdrant Vector DB]
-    G --> H[Legal Documents]
-    E --> I[Response Generation]
+        E --> G[Qdrant + Hybrid Search]
+        G --> H[Top Legal Snippets]
+        H --> I[Generate Legal Response]
+        I --> J[Citation Verification]
+        J --> K[Final Answer]
 
-    F --> I
-    I --> J[Groq LLM]
-    J --> K[Citation Check]
-    K --> L[Final Answer]
+        F --> K
 
-    M[PostgreSQL] --> C
-    C --> M
+        L[PostgreSQL]
+        L --> C
+        C --> L
+    end
 
     classDef box fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000;
-    class A,B,Z,C,D,E,F,G,H,I,J,K,L,M box;
+    class A,B,Z,C,D,E,F,G,H,I,J,K,L box;
 ```
-
 > **Note:** Deployment method (Local Docker vs Hugging Face Spaces) only changes where the app runs; the runtime logic (retrieval, LLM, citation auditing) stays the same.
 
 ### Key Components
