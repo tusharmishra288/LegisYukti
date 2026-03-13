@@ -50,49 +50,42 @@ The system follows a modular RAG architecture. The runtime behavior is the same 
 
 ### Runtime Architecture (with Deployment)
 
-```mermaid
-graph LR
-    A[Deployment] --> B[Local Docker]
-    A --> C[Hugging Face Spaces]
+```text
+Deployment:
+  - Local Docker
+  - Hugging Face Spaces
 
-    B --> D[NyayaAI App (Streamlit)]
-    C --> D
+Runtime Flow:
+  User Query
+      ↓
+  Streamlit UI
+      ↓
+  LangGraph Agent
+      ↓
+  ┌───────────────────┐
+  │   Query Type?     │
+  │ (Legal / General) │
+  └───────────────────┘
+      ↓        ↓
+    Legal     General
+    Path      Path
+      ↓         ↓
+  Retrieval   Direct Response
+      ↓
+  Response Generation
+      ↓
+  Groq LLM
+      ↓
+  Citation Check
+      ↓
+  Final Answer
 
-    D --> E[LangGraph Agent]
-    E --> F{Query Type?}
-    F -->|Legal| G[Retrieval System]
-    F -->|General| H[Direct Response]
+Persistence:
+  - PostgreSQL (chat history + state)
+  - Qdrant (legal document embeddings)
+``` 
 
-    G --> I[Qdrant<br/>Vector DB]
-    I --> J[Legal Documents]
-    G --> K[Response Generation]
-
-    H --> K
-    K --> L[Groq LLM]
-    L --> M[Citation Check]
-    M --> N[Final Answer]
-
-    O[PostgreSQL] --> E
-    E --> O
-
-    style A fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
-    style B fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
-    style C fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
-    style D fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
-    style E fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
-    style F fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
-    style G fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
-    style H fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
-    style I fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
-    style J fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
-    style K fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
-    style L fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
-    style M fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
-    style N fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
-    style O fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
-```
-
-> **Note:** The deployment method (local Docker vs Hugging Face Spaces) only changes where the app runs; the runtime logic (retrieval, LLM, citation auditing) stays the same.
+> **Note:** The deployment method (Local Docker vs Hugging Face Spaces) only changes where the app runs; the runtime logic (retrieval, LLM, citation auditing) remains the same.
 
 ### Key Components
 
