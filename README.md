@@ -41,7 +41,7 @@ An AI-powered legal consultation platform that leverages Retrieval-Augmented Gen
 - **Quality Scoring**: Built-in evaluation system for response accuracy and reliability
 - **Modern Web Interface**: Clean, professional Streamlit-based chat interface
 - **GPU Acceleration**: Optimized for NVIDIA GPU usage with CUDA support
-- **Persistent Conversations**: PostgreSQL-backed chat history and state management
+- **Persistent Conversations**: Neon (PostgreSQL-compatible) backed chat history and state management
 - **Free-Tier Keep‑Alive Service**: Automatically pings the app and Qdrant Cloud to prevent Hugging Face Spaces from sleeping (includes `?health=true` endpoint)
 
 ## 🏗️ Architecture
@@ -52,14 +52,13 @@ The system follows a modular RAG architecture. The runtime behavior is the same 
 
 ```mermaid
 flowchart TB
-    subgraph Deployment
-        A[Local Docker] --> Z[NyayaAI App]
-        B[Hugging Face Spaces] --> Z
+    subgraph Ingestion
+        X[Docs (docs/*.pdf)] --> Y[Qdrant Vector Store]
     end
 
     subgraph Runtime
-        Z --> C[LangGraph Agent]
-        C --> D{Classification}
+        Z[NyayaAI App (Streamlit)] --> C[LangGraph Agent]
+        C --> D{Query Type?}
         D -->|"LEGAL"| E[Retrieve Legal Context]
         D -->|"CHAT"| F[Chat Persona Response]
 
@@ -71,15 +70,17 @@ flowchart TB
 
         F --> K
 
-        L[PostgreSQL]
-        L --> C
-        C --> L
+        K --> L[Hugging Face Spaces]
+        L --> Z
+
+        M[Neon (PostgreSQL) Checkpoints] --> C
+        C --> M
     end
 
     classDef box fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000;
-    class A,B,Z,C,D,E,F,G,H,I,J,K,L box;
+    class Z,C,D,E,F,G,H,I,J,K,L,M,X,Y box;
 ```
-> **Note:** Deployment method (Local Docker vs Hugging Face Spaces) only changes where the app runs; the runtime logic (retrieval, LLM, citation auditing) stays the same.
+> **Note:** The runtime logic (retrieval, LLM, citation auditing) stays the same regardless of deployment. Local Docker deployment is detailed in the deployment section below.
 
 ### Key Components
 
@@ -104,7 +105,7 @@ flowchart TB
 - **Context Management**: Optimizes token usage for legal reasoning
 
 #### **Data Storage**
-- **PostgreSQL**: Conversation history and session persistence
+- **Neon (PostgreSQL compatible)**: Conversation history and session persistence
 - **Model Caching**: FastEmbed and HuggingFace model storage
 - **Document Processing**: PDF to markdown conversion pipeline
 
@@ -248,7 +249,7 @@ docker run --rm -p 8501:7860 \
 #### Environment Variables
 - `DEVICE_TYPE`: `cuda` for GPU, `cpu` for CPU-only
 - `WATCHFILES_FORCE_POLLING`: `true` for development hot-reload
-- `PGCHANNELBINDING`: `disable` for PostgreSQL compatibility
+- `PGCHANNELBINDING`: `disable` for Neon (PostgreSQL) compatibility
 - `UV_SYSTEM_PYTHON`: `1` for UV package manager
 
 ### Deployment Configuration
@@ -270,7 +271,7 @@ docker run --rm -p 8501:7860 \
 #### Environment Variables
 - `DEVICE_TYPE`: `cuda` for GPU, `cpu` for CPU-only
 - `WATCHFILES_FORCE_POLLING`: `true` for development hot-reload
-- `PGCHANNELBINDING`: `disable` for PostgreSQL compatibility
+- `PGCHANNELBINDING`: `disable` for Neon (PostgreSQL) compatibility
 - `UV_SYSTEM_PYTHON`: `1` for UV package manager
 
 ### Production Deployment
@@ -278,7 +279,7 @@ docker run --rm -p 8501:7860 \
 For production environments:
 
 1. **External Databases**:
-   - Configure external PostgreSQL instance
+   - Configure external Neon (PostgreSQL-compatible) instance
    - Use Qdrant Cloud for vector storage
    - Set up Redis for response caching (optional)
 
