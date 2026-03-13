@@ -53,11 +53,11 @@ The system follows a modular RAG architecture. The runtime behavior is the same 
 ```mermaid
 flowchart TB
     subgraph Ingestion
-        X[Docs (docs/*.pdf)] --> Y[Qdrant Vector Store]
+        X[Legal Documents] --> Y[Qdrant Vector Store]
     end
 
     subgraph Runtime
-        Z[NyayaAI App (Streamlit)] --> C[LangGraph Agent]
+        Z[Streamlit App] --> C[LangGraph Agent]
         C --> D{Query Type?}
         D -->|"LEGAL"| E[Retrieve Legal Context]
         D -->|"CHAT"| F[Chat Persona Response]
@@ -73,7 +73,7 @@ flowchart TB
         K --> L[Hugging Face Spaces]
         L --> Z
 
-        M[Neon (PostgreSQL) Checkpoints] --> C
+        M[Neon Checkpoints] --> C
         C --> M
     end
 
