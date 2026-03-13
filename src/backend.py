@@ -1,5 +1,5 @@
 """
-Backend initialization and command-line interface for the Legal Advisor System.
+Backend initialization and command-line interface for the Legal Consultation System.
 
 This module serves as the main entry point for running the legal advisor in backend mode:
 - Initializes vector database and legal document index
@@ -59,7 +59,7 @@ def connect_with_retry(uri, kwargs, retries=3, delay=5):
                 raise e
 
 def main():
-    """Main entry point for the Legal Advisor System backend.
+    """Main entry point for the Legal Consultation System backend.
 
     Orchestrates the complete system initialization sequence:
     1. Vector store setup and document ingestion
@@ -70,7 +70,7 @@ def main():
     The function implements robust error handling and graceful shutdown
     to ensure system reliability in production environments.
     """
-    logger.info("⚖️  Legal Advisor System Starting Up...")
+    logger.info("⚖️  Nyaya AI - Legal Consultation System Starting Up...")
 
     try:
         # Phase 1: Initialize Vector Database and Legal Knowledge Base
@@ -117,7 +117,7 @@ def main():
 
             # Phase 7: Launch Interactive Legal Consultation Interface
             print("\n" + "="*50)
-            print("⚖️  INDIAN LEGAL ADVISOR")
+            print("⚖️  NYAYA AI - LEGAL CONSULTATION SYSTEM (BACKEND MODE)")
             print("="*50)
             print("Type 'exit' or 'quit' to end session.\n")
 

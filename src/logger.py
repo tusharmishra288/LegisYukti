@@ -1,5 +1,5 @@
 """
-Centralized logging configuration for the Legal Advisor System.
+Centralized logging configuration for the Nyaya AI - Legal Consultation System.
 
 This module provides unified logging across all components with:
 - Structured console output for development

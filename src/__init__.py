@@ -9,4 +9,4 @@ from .prompts import *
 from .utils import *
 
 # Logging the package initialization
-logger.info("📦 Legal Advisor System 'src' package initialized.")
+logger.info("📦 Nyaya AI System codebase initialized.")

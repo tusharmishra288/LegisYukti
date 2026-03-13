@@ -19,7 +19,7 @@ if hasattr(Image, "register_extension"):
 # --- 1. Page Configuration & Professional Branding ---
 # Configure the Streamlit app with legal-themed styling and responsive layout
 st.set_page_config(
-    page_title="Legal Advisor System | Statutory Intelligence",
+    page_title="NyayaAI - Intelligent Legal Consultation for Modern India",
     page_icon="⚖️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -69,7 +69,7 @@ if "busy" not in st.session_state:
     st.session_state.busy = False  # Processing state flag
 
 # --- 3. System Core Initialization (Cached) ---
-# Initialize the core legal advisor system with database connections and LangGraph agent
+# Initialize the core nyayaAI app with database connections and LangGraph agent
 @st.cache_resource
 def init_system_core():
     # Establish PostgreSQL connection pool for conversation persistence
@@ -304,7 +304,7 @@ if st.query_params.get("health") == "true":
     st.json({"status": "healthy", "timestamp": time.time(), "service": "NyayaAI"})
     st.stop()  # Stop execution to return only the JSON response
 
-st.title("⚖️ Legal Advisor System")
+st.title("⚖️ NyayaAI - Intelligent Legal Consultation for Modern India")
 st.markdown('<div class="disclaimer-hero"><b>⚠️ MANDATORY DISCLOSURE:</b> AI research tool only. Statutory results must be cross-verified with Official Gazettes. No attorney-client relationship is formed.</div>', unsafe_allow_html=True)
 
 # Only render when not processing a query to prevent UI conflicts

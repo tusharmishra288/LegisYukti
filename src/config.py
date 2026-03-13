@@ -1,5 +1,5 @@
 """
-Configuration module for the Legal Advisor System.
+Configuration module for the Nyaya AI -Legal Consultation System.
 
 Centralizes all system configuration including:
 - Directory structure and paths
