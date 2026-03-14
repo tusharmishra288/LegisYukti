@@ -1,5 +1,5 @@
 """
-Legal Document Processing Pipeline - PDF to Vector Database
+Data Refiner - Legal Document Processing Pipeline which ingests data from PDF to Vector Database
 
 This module handles the complete document processing pipeline for legal texts:
 PDF conversion, text cleaning, chunking, and vector database indexing.
@@ -99,7 +99,7 @@ def clean_and_enrich_markdown(md_content: str, law_name: str):
     tag = "Article" if "CONSTITUTION" in law_name.upper() else "Section"
     if "INFORMATION TECHNOLOGY" in law_name.upper() or "IT ACT" in law_name.upper():
         tag = "Section"
-    logger.debug(f"🧹 Scythe Pass: Using tag '{tag}' for {law_name}")
+    logger.debug(f"🧹 Data Refiner Pass: Using tag '{tag}' for {law_name}")
     
     # Pass 1: Global Reset - Remove all existing section headers to start clean
     md_content = re.sub(r'(?m)^###\s+(Section|Article).*$', '', md_content, flags=re.IGNORECASE)
@@ -139,7 +139,7 @@ def clean_and_enrich_markdown(md_content: str, law_name: str):
             promoted_count += 1
         else: processed_lines.append(line)
 
-    logger.info(f"✨ Scythe: Promoted {promoted_count} text blocks to '{tag}' headers in {law_name}")
+    logger.info(f"✨ Data Refiner: Promoted {promoted_count} text blocks to '{tag}' headers in {law_name}")
     final_md = re.sub(r'\n{3,}', '\n\n', '\n'.join(processed_lines)).strip()
     #Fix common OCR/Formatting glitches
     # Fix spacing issues before commas and standard labels
@@ -220,7 +220,7 @@ def convert_pdf_to_md(file_path:str, output_path:str):
         logger.debug(f"📊 Raw Markdown size: {len(raw_md)} chars")
         
         refined_md = clean_and_enrich_markdown(raw_md, Path(file_path).stem)
-        logger.info(f"✨ Scythe Pass: Reduced noise from {len(raw_md)} to {len(refined_md)} chars")
+        logger.info(f"✨ Data Refiner Pass: Reduced noise from {len(raw_md)} to {len(refined_md)} chars")
         
         Path(output_path).write_text(refined_md, encoding="utf-8")
         logger.success(f"✅ Saved clean Markdown to {output_path} in {time.time() - start_time:.2f}s")

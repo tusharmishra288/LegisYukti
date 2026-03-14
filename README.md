@@ -1,5 +1,5 @@
 ---
-title: NyayaAI - Intelligent Legal Consultation for Modern India
+title: LegisYukti — An Agentic RAG Framework for Multi-Document Reasoning
 emoji: ⚖️
 colorFrom: blue
 colorTo: indigo
@@ -9,13 +9,43 @@ app_port: 7860
 pinned: false
 ---
 
-# NyayaAI: Intelligent Legal Consultation for Modern India ⚖️
+# LegisYukti ⚖️
+### *An Agentic RAG Framework for Multi-Document Reasoning*
 
-An AI-powered legal consultation platform that leverages Retrieval-Augmented Generation (RAG) to provide intelligent answers about Indian law. Features a comprehensive knowledge base of 17+ legal acts and uses advanced AI technologies for accurate, context-aware legal research and guidance.
+An experimental AI-powered legal reasoning platform that leverages **Agentic Retrieval-Augmented Generation (RAG)** to provide grounded insights into Indian law. **LegisYukti** focuses on structural text extraction and verified reasoning across a comprehensive knowledge base of 17+ primary statutes.
+
+---
+
+### 📖 The Meaning Behind the Name
+The name **LegisYukti** is a hybrid of two linguistic roots, representing the bridge between ancient logic and modern legislation:
+
+* **Legis (Latin):** The universal root for **"Law"** or **"Legislation,"** representing the formal statutory framework.
+* **Yukti (Sanskrit: युक्ति):** A term from Indian logic meaning **"Reasoning," "Skillful Application,"** or **"Logic."** It represents the active process of using intelligence to find a solution or an inference.
+
+Together, **LegisYukti** signifies the **intelligent application of logic to the law**—moving beyond simple keyword search toward structured statutory reasoning.
+
+---
+
+## 🚀 Project Overview
+**LegisYukti** is an experimental framework designed to navigate the complexities of the Indian legal landscape, specifically focusing on the transition to the **2023 legal reforms (BNS, BNSS, BSA)**. 
+
+Unlike standard chatbots that may hallucinate, LegisYukti utilizes an **Agentic RAG** architecture. It treats legal documents not just as raw text, but as a structured knowledge base, ensuring every consultation is grounded in verified, official statutes.
+
+#### **Key Technical Pillars:**
+- **Agentic Orchestration**: Built with **LangGraph**, the system utilizes a multi-node state machine to manage conversation flow, refine search queries, and validate findings.
+- **High-Fidelity Retrieval**: Powered by **Qdrant**, the framework performs semantic searches across 17 primary statutes, ensuring precision even in complex, cross-document queries.
+- **Data Refiner**: A custom preprocessing pipeline that transforms noisy, multi-lingual Gazette PDFs into structured Markdown, preserving alphanumeric section hierarchies (e.g., 53A, 106B).
+- **Faithful Grounding**: Every response includes direct section-level citations and a "Fidelity Score" to maintain transparency and minimize AI hallucinations.
 
 ## 🌟 Features
 
-- **Intelligent Legal Query Processing**: Natural language queries about Indian law with context-aware responses
+- **Intelligent Legal Query Processing**: - Multi-step reasoning for complex legal questions with context-aware responses.
+- **Citation Verification**: Automated auditing system to ensure responses are grounded in legal texts
+- **Quality Scoring**: Built-in evaluation system for response accuracy and reliability
+- **Modern Web Interface**: Clean, professional Streamlit-based chat interface
+- **GPU Acceleration**: Optimized for NVIDIA GPU usage with CUDA support
+- **Persistent Conversations**: Neon (PostgreSQL-compatible) backed chat history and state management
+- **Free-Tier Keep‑Alive Service**: Automatically pings the app and Qdrant Cloud to prevent Hugging Face Spaces from sleeping
 - **Comprehensive Legal Knowledge Base**: Includes 17 major Indian legal documents covering criminal, civil, constitutional, and commercial law:
 
 | Legal Document | Year | Description |
@@ -37,12 +67,6 @@ An AI-powered legal consultation platform that leverages Retrieval-Augmented Gen
 | **POCSO Act** | 2012 | Protection of Children from Sexual Offences |
 | **Narcotic Drugs and Psychotropic Substances Act** | 1985 | Controls manufacture, possession, and trafficking of narcotics |
 | **Registration Act** | 1908 | Mandates registration of documents affecting immovable property |
-- **Citation Verification**: Automated auditing system to ensure responses are grounded in legal texts
-- **Quality Scoring**: Built-in evaluation system for response accuracy and reliability
-- **Modern Web Interface**: Clean, professional Streamlit-based chat interface
-- **GPU Acceleration**: Optimized for NVIDIA GPU usage with CUDA support
-- **Persistent Conversations**: Neon (PostgreSQL-compatible) backed chat history and state management
-- **Free-Tier Keep‑Alive Service**: Automatically pings the app and Qdrant Cloud to prevent Hugging Face Spaces from sleeping (includes `?health=true` endpoint)
 
 ## 🏗️ Architecture
 
@@ -53,43 +77,30 @@ The system follows a modular RAG architecture. The runtime behavior is the same 
 ```mermaid
 flowchart TB
     subgraph "Ingestion Stage"
-        X[Legal Documents] --> Y[Qdrant Vector Store]
+        X[Gazette PDFs] --> Refiner[Data Refiner]
+        Refiner --> Y[Qdrant Vector Store]
     end
 
     subgraph "Persistence Stage"
-        M[Neon Checkpoints]
-    end
-
-    subgraph "Interaction Stage"
-        Z[Streamlit App]
+        M[Neon/Postgres Checkpoints]
     end
 
     subgraph "Processing Stage"
-        C[LangGraph Agent] --> D{Query Type?}
-        D -->|"LEGAL"| E[Retrieve Legal Context]
-        D -->|"CHAT"| F[Chat Persona Response]
+        C[LangGraph Agentic Flow] --> D{Query Type?}
+        D -->|"LEGAL"| E[Retrieve Context]
+        D -->|"CHAT"| F[General Response]
 
-        E --> G[Qdrant + Hybrid Search]
-        G --> H[Top Legal Snippets]
-        H --> I[Generate Legal Response]
+        E --> G[Qdrant Semantic Search]
+        G --> H[Top Context Snippets]
+        H --> I[Reasoning & Synthesis]
         I --> J[Citation Verification]
-        J --> K[Final Answer]
+        J --> K[Final Answer with Fidelity Score]
 
         F --> K
     end
 
-    subgraph "Deployment Stage"
-        L[Hugging Face Spaces]
-    end
-
-    Y --> G
-    M --> C
-    Z --> C
-    K --> L
-    L --> Z
-
-    classDef box fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000;
-    class X,Y,Z,C,D,E,F,G,H,I,J,K,L,M box;
+    Z[Streamlit Interface] <--> C
+    M <--> C
 ```
 > **Note:** The runtime logic (retrieval, LLM, citation auditing) stays the same regardless of deployment. Local Docker deployment is detailed in the deployment section below.
 
@@ -196,7 +207,7 @@ The system includes a GitHub Actions workflow (`.github/workflows/deploy.yml`) t
 ```bash
 # 1. Clone and setup
 git clone <repository-url>
-cd Legal_Advisor_System
+cd LegisYukti
 cp .env.example .env
 # Edit .env with your API keys
 
@@ -211,7 +222,7 @@ docker-compose up --build
 
 ```bash
 # Build image manually
-docker build -t legal_advisor_app --build-arg TARGET_ENV=local .
+docker build -t legisyukti_app --build-arg TARGET_ENV=local .
 
 # Run with GPU support
 docker run --rm -p 8501:7860 \
@@ -219,14 +230,14 @@ docker run --rm -p 8501:7860 \
   -v $(pwd)/model_cache:/app/model_cache \
   -v $(pwd)/logs:/app/logs \
   --env-file .env \
-  legal_advisor_app
+  legisyukti_app
 
 # Run CPU-only
 docker run --rm -p 8501:7860 \
   -v $(pwd)/model_cache:/app/model_cache \
   -v $(pwd)/logs:/app/logs \
   --env-file .env \
-  legal_advisor_app
+  legisyukti_app
 ```
 
 ### Deployment Comparison
@@ -290,9 +301,8 @@ docker run --rm -p 8501:7860 \
 For production environments:
 
 1. **External Databases**:
-   - Configure external Neon (PostgreSQL-compatible) instance
+   - Configure external Neon database (PostgreSQL-compatible) instance
    - Use Qdrant Cloud for vector storage
-   - Set up Redis for response caching (optional)
 
 2. **Security**:
    - Use reverse proxy (nginx) for SSL termination
@@ -376,4 +386,4 @@ See LICENSE file for details.
 
 ## ⚠️ Disclaimer
 
-This system provides general legal information based on available legal texts. It is not a substitute for professional legal advice. Always consult qualified legal professionals for specific legal matters.
+LegisYukti provides general legal information based on available legal texts. It is not a substitute for professional legal advice. Always consult qualified legal professionals for specific legal matters.

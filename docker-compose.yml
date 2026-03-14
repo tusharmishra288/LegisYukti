@@ -1,5 +1,5 @@
 services:
-  nyayai-app:
+  legisyukti-app:
     build:
       context: ..
       dockerfile: Dockerfile
@@ -33,4 +33,4 @@ services:
 
 networks:
   default:
-    name: nyayai_network
+    name: legisyukti_network

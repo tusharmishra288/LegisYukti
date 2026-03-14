@@ -1,5 +1,5 @@
 """
-Nyaya AI Legal Consultation Agent - LangGraph-based RAG System for Indian Law
+LegisYukti Agent - LangGraph-based RAG System for Indian Law
 
 This module implements a sophisticated legal research agent using LangGraph state machines.
 The agent orchestrates the complete RAG pipeline: query routing → legal research → response generation → quality auditing.

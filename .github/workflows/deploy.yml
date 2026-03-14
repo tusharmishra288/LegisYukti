@@ -1,4 +1,4 @@
-name: Nyaya AI - Hugging Face Sync
+name: LegisYukti - Hugging Face Sync
 on:
   push:
     branches: [master]

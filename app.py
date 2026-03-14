@@ -20,7 +20,7 @@ if hasattr(Image, "register_extension"):
 # --- 1. Page Configuration & Professional Branding ---
 # Configure the Streamlit app with legal-themed styling and responsive layout
 st.set_page_config(
-    page_title="NyayaAI - Intelligent Legal Consultation for Modern India",
+    page_title="LegisYukti — An Agentic RAG Framework for Multi-Document Reasoning",
     page_icon="⚖️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -70,7 +70,7 @@ if "busy" not in st.session_state:
     st.session_state.busy = False  # Processing state flag
 
 # --- 3. System Core Initialization (Cached) ---
-# Initialize the core nyayaAI app with database connections and LangGraph agent
+# Initialize the core legisyukti app with database connections and LangGraph agent
 @st.cache_resource
 def init_system_core():
     # Establish PostgreSQL connection pool for conversation persistence
@@ -288,8 +288,10 @@ with st.sidebar:
         st.markdown("""<div style="font-size:11px;">
         1. <b>Workspace Strategy:</b> Use 1 workspace for 1 type of advisory (e.g. Criminal vs Civil) for maximum semantic focus.<br><br>
         2. <b>Audit Check:</b> Review the Fidelity Card at the bottom of each block. If low, click 'Regenerate Analysis'.<br><br>
-        <b>Prompt Example:</b><br>
-        - <i>'Punishment for medical negligence under BNS 2023'</i>
+        <b>Prompt Examples:</b><br>
+        - <i>'Define 'Community Service' as a new form of punishment in the BNSS'</i>
+        - <i>'What are the safe harbor protections for 'Intermediaries' under the IT Act?'</i>
+        - <i>'How is 'Digital Evidence' authenticated under Section 63 of the BSA?'</i>
         </div>""", unsafe_allow_html=True)
 
     st.markdown("---")
@@ -313,11 +315,11 @@ with st.sidebar:
 
 # Health check endpoint for keep-alive service (accessed via ?health=true)
 if st.query_params.get("health") == "true":
-    st.json({"status": "healthy", "timestamp": time.time(), "service": "NyayaAI"})
+    st.json({"status": "healthy", "timestamp": time.time(), "service": "legisyukti"})
     st.stop()  # Stop execution to return only the JSON response
 
-st.title("⚖️ NyayaAI - Intelligent Legal Consultation for Modern India")
-st.markdown('<div class="disclaimer-hero"><b>⚠️ MANDATORY DISCLOSURE:</b> AI research tool only. Statutory results must be cross-verified with Official Gazettes. No attorney-client relationship is formed.</div>', unsafe_allow_html=True)
+st.title("⚖️ LegisYukti — An Agentic RAG Framework for Multi-Document Reasoning")
+st.markdown('<div class="disclaimer-hero"><b>⚠️ MANDATORY DISCLOSURE:</b> AI research or reasoning tool only. Statutory results must be cross-verified with Official Gazettes. No attorney-client relationship is formed.</div>', unsafe_allow_html=True)
 
 # Only render when not processing a query to prevent UI conflicts
 if not st.session_state.busy:

@@ -1,7 +1,7 @@
 [project]
-name = "legaladvisorsystem"
+name = "legisyukti"
 version = "0.1.0"
-description = "Legal Advisor System with 2026 Security Patches (CVE-2026-25990 Fixed)"
+description = "LegisYukti App with 2026 Security Patches (CVE-2026-25990 Fixed)"
 readme = "README.md"
 requires-python = "==3.12.*"
 dependencies = [
