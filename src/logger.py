@@ -1,5 +1,5 @@
 """
-Centralized logging configuration for the Nyaya AI - Legal Consultation System.
+Centralized logging configuration for the Agentic RAG Framework.
 
 This module provides unified logging across all components with:
 - Structured console output for development
@@ -36,7 +36,7 @@ class InterceptHandler(logging.Handler):
         logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
 
 def setup_logging():
-    """Initialize comprehensive logging system for the legal advisor.
+    """Initialize comprehensive logging system for the legal framework.
 
     Sets up a dual-output logging system:
     1. Clean console output for development and monitoring

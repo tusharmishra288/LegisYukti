@@ -1,7 +1,7 @@
 """
-Backend initialization and command-line interface for the Legal Consultation System.
+Backend initialization and command-line interface for the Agent RAG Reasoning System.
 
-This module serves as the main entry point for running the legal advisor in backend mode:
+This module serves as the main entry point for running the Agentic RAG Framework in backend mode:
 - Initializes vector database and legal document index
 - Sets up PostgreSQL connection pool for conversation persistence
 - Provides interactive command-line interface for legal queries
@@ -59,7 +59,7 @@ def connect_with_retry(uri, kwargs, retries=3, delay=5):
                 raise e
 
 def main():
-    """Main entry point for the Legal Consultation System backend.
+    """Main entry point for the Agentic RAG Framework backend.
 
     Orchestrates the complete system initialization sequence:
     1. Vector store setup and document ingestion
@@ -70,7 +70,7 @@ def main():
     The function implements robust error handling and graceful shutdown
     to ensure system reliability in production environments.
     """
-    logger.info("⚖️  Nyaya AI - Legal Consultation System Starting Up...")
+    logger.info("⚖️  LegisYukti - Agentic RAG Framework Starting Up...")
 
     try:
         # Phase 1: Initialize Vector Database and Legal Knowledge Base
@@ -117,7 +117,7 @@ def main():
 
             # Phase 7: Launch Interactive Legal Consultation Interface
             print("\n" + "="*50)
-            print("⚖️  NYAYA AI - LEGAL CONSULTATION SYSTEM (BACKEND MODE)")
+            print("⚖️  LEGISYUKTI - AGENTIC RAG REASONING FRAMEWORK (BACKEND MODE)")
             print("="*50)
             print("Type 'exit' or 'quit' to end session.\n")
 
@@ -138,7 +138,7 @@ def main():
                             if node == "evaluator":
                                 ai_msg = value["messages"][-1].content
                                 score = value.get("evaluation_score", "N/A")
-                                feedback = value.get("evaluation_feedback", "Verified via Scythe Path")
+                                feedback = value.get("evaluation_feedback", "Verified via Data Refiner")
 
                                 # Display response to user while logging for audit trail
                                 logger.info(f"\nAdvisor: {ai_msg}")

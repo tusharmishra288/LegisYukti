@@ -1080,7 +1080,7 @@ wheels = [
 ]
 
 [[package]]
-name = "legaladvisorsystem"
+name = "legisyukti"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
