@@ -52,6 +52,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Copy project files
 COPY . .
 
+# Ensure the docs directory exists and has the right permissions
+RUN mkdir -p /app/docs && chmod -R 777 /app/docs
+
 # Final Project Install (allow lockfile updates if needed)
 # Using --no-dev ensures dependencies can be resolved even if uv.lock is out of date.
 # Remove --frozen to avoid build failures due to transient PyPI wheel availability.
