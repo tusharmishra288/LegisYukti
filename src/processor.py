@@ -1,3 +1,24 @@
+"""
+Legal Document Processing Pipeline - PDF to Vector Database
+
+This module handles the complete document processing pipeline for legal texts:
+PDF conversion, text cleaning, chunking, and vector database indexing.
+
+Key Components:
+- convert_pdf_to_md(): PDF to Markdown conversion with OCR
+- clean_and_enrich_markdown(): Text cleaning and structure enhancement
+- get_chunks_from_md(): Document chunking with metadata injection
+- run_ingestion_pipeline(): Batch processing and vector indexing
+
+Features:
+- GPU-accelerated PDF processing with CUDA fallback
+- Advanced OCR with table and image extraction
+- Legal text structure recognition (sections, articles)
+- Metadata injection for retrieval filtering
+- Memory management for large document processing
+- Batch processing with progress tracking
+"""
+
 import re
 import gc
 import time
@@ -7,13 +28,13 @@ from pathlib import Path
 from loguru import logger
 from .config import SCRATCH_DIR, DOCS_DIR
 
-# Docling Imports
+# Docling imports for advanced document processing
 from docling.datamodel.base_models import ConversionStatus, InputFormat
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.datamodel.pipeline_options import RapidOcrOptions, PdfPipelineOptions
 from docling.datamodel.accelerator_options import AcceleratorDevice, AcceleratorOptions
 
-# LangChain Imports
+# LangChain imports for text processing and chunking
 from langchain_qdrant import QdrantVectorStore
 from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 
@@ -21,42 +42,69 @@ try:
     from PIL import Image
     import fastembed
     from loguru import logger
-    
-    # Verify Pillow version for Dependabot/Security Audit
+
+    # Security audit: Verify Pillow version for vulnerability patches
     import PIL
     logger.info(f"🛡️ Security: Pillow {PIL.__version__} loaded (CVE-2026-25990 Patched)")
-    
-    # Neutralize the actual attack vector (PSD files)
-    Image.MAX_IMAGE_PIXELS = 1000000 # Limit memory-bomb images
+
+    # Prevent PSD-based attacks by disabling vulnerable decoder
+    Image.MAX_IMAGE_PIXELS = 1000000  # Limit memory-bomb images
 except ImportError as e:
     logger.critical(f"FATAL: Dependency conflict detected after Pillow patch: {e}")
 
 # --- 1. Memory Management Utility ---
 def clear_memory(converter_result=None):
-    """Forcefully releases both Python and C++ level memory held by Docling & Torch."""
+    """Aggressively release memory from document processing operations.
+
+    Handles both Python garbage collection and C++ backend cleanup in Docling
+    to prevent memory leaks during batch processing of legal documents.
+
+    Args:
+        converter_result: Docling conversion result object to clean up
+    """
     if converter_result and hasattr(converter_result, 'input') and hasattr(converter_result.input, '_backend'):
         try:
-            # Crucial: Unloads the C++ backend that gc.collect() can't see
+            # Explicitly unload C++ backend that gc.collect() can't reach
             converter_result.input._backend.unload()
             logger.debug("🗑️  Docling Backend explicitly unloaded.")
         except Exception as e:
             logger.debug(f"⚠️  Backend unload skip: {e}")
 
+    # Standard Python memory cleanup
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
     logger.debug("🧹 Memory sweep completed.")
 
 def clean_and_enrich_markdown(md_content: str, law_name: str):
+    """Clean and structure raw Markdown from PDF conversion for legal document processing.
+
+    Performs multi-pass cleaning and structural enhancement of OCR-generated Markdown
+    to prepare legal texts for chunking and vectorization.
+
+    Cleaning Passes:
+    1. Global reset: Remove malformed section headers
+    2. Symbol purge: Remove OCR artifacts and noise patterns
+    3. Promotion: Convert inline section references to proper headers
+    4. OCR fixes: Correct common scanning errors in legal text
+
+    Args:
+        md_content: Raw Markdown content from PDF conversion
+        law_name: Name of the legal document for tag determination
+
+    Returns:
+        str: Cleaned and structured Markdown content
+    """
+    # Determine appropriate tag based on legal document type
     tag = "Article" if "CONSTITUTION" in law_name.upper() else "Section"
     if "INFORMATION TECHNOLOGY" in law_name.upper() or "IT ACT" in law_name.upper():
         tag = "Section"
     logger.debug(f"🧹 Scythe Pass: Using tag '{tag}' for {law_name}")
     
-    # Pass 1: Global Reset
+    # Pass 1: Global Reset - Remove all existing section headers to start clean
     md_content = re.sub(r'(?m)^###\s+(Section|Article).*$', '', md_content, flags=re.IGNORECASE)
     
-    # Pass 2: Symbol Purge
+    # Pass 2: Symbol Purge - Remove OCR artifacts and formatting noise
     noise_patterns = [ 
         r"", r"xxxGIDHxxx.*?CG-DL-E-\d+-\d+", r"\s-\d{5,}\s", r"lañ\s+\d+\]",
         r"No\.\s+\d+\]", r"ubZ\s+fnYyh.*?\d{4}", r".*¼'kd½.*",
@@ -66,7 +114,7 @@ def clean_and_enrich_markdown(md_content: str, law_name: str):
     for pattern in noise_patterns:
         md_content = re.sub(pattern, "", md_content, flags=re.IGNORECASE | re.MULTILINE)
 
-    # Pass 3: Promotion
+    # Pass 3: Promotion - Convert inline section references to proper Markdown headers
     md_content = re.sub(r'^###\s+(Section|Article)\s+', f'### {tag} ', md_content, flags=re.IGNORECASE | re.MULTILINE)
     
     provision_pattern = r'^(\d+)\.\s+([A-Z].*)'
@@ -186,15 +234,33 @@ def convert_pdf_to_md(file_path:str, output_path:str):
         return None
 
 def get_chunks_from_md(md_path: str, law_name: str):
-    """Logs the splitting and breadcrumb injection process."""
+    """Split cleaned Markdown into structured chunks with legal metadata for vectorization.
+
+    Performs hierarchical text splitting to create semantically coherent chunks from legal documents,
+    preserving section structure and injecting breadcrumb metadata for retrieval accuracy.
+
+    Splitting Strategy:
+    1. Header-based splitting: Break on Part/Chapter/Section headers
+    2. Recursive character splitting: Further divide into 1200-char chunks with 250-char overlap
+    3. Metadata injection: Add law name and section references to each chunk
+
+    Args:
+        md_path: Path to the cleaned Markdown file
+        law_name: Name of the legal document (e.g., "INDIAN CONTRACT ACT")
+
+    Returns:
+        List[Document]: List of chunked documents with metadata for vector store ingestion
+    """
     logger.info(f"🥢 Splitting legal text into structured chunks: {law_name}")
     content = Path(md_path).read_text(encoding="utf-8")
 
+    # Hierarchical splitting: First by major structural headers
     headers_to_split_on = [("#", "Part"), ("##", "Chapter"), ("###", "Section_Header")]
     md_splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on, strip_headers=False)
     header_splits = md_splitter.split_text(content)
     logger.debug(f"📂 Identified {len(header_splits)} primary markdown headers in {law_name}")
 
+    # Fine-grained splitting with legal-aware separators
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=1200, chunk_overlap=250, is_separator_regex=True,
         separators=[r"\n### ", r"\n\(\d+\) ", r"\nProvided that", r"\nExplanation\.", r"\nIllustration\.", "\n\n", "\n", ". ", " ", ""]
@@ -202,28 +268,43 @@ def get_chunks_from_md(md_path: str, law_name: str):
     docs = text_splitter.split_documents(header_splits)
     logger.info(f"🧩 Created {len(docs)} granular chunks for {law_name}")
 
+    # Inject legal metadata and breadcrumbs for retrieval
     label = "Article" if "CONSTITUTION" in law_name.upper() else "Section"
     for i, doc in enumerate(docs):
+        # Extract section number from header metadata
         raw_header = doc.metadata.get("Section_Header", "General")
         clean_num = re.search(r'\d+', raw_header)
         header_tag = f"{label} {clean_num.group(0)}" if clean_num else raw_header
 
+        # Add structured metadata for legal retrieval
         doc.metadata["law_name"] = law_name
         doc.metadata["section"] = header_tag
-            
+
+        # Inject breadcrumb prefix for context-aware retrieval
         doc.page_content = f"passage: [LAW: {law_name} | {header_tag}]\n{doc.page_content}"
-        # Clean up the metadata (removes Nones, keeps our new law_name/section)
+
+        # Clean up metadata (remove None values)
         doc.metadata = {k: v for k, v in doc.metadata.items() if v}
 
         if i < 3:
             logger.debug(f"🏷️  Metadata Verified [{i+1}]: {doc.metadata['law_name']} | {doc.metadata['section']}")
-    
+
     logger.info(f"🧩 Metadata Logic: Injected [LAW: {law_name}] breadcrumbs into {len(docs)} chunks.")
     return docs
 
 def run_ingestion_pipeline(vector_store: QdrantVectorStore):
-    """
-    Coordinates the conversion and batch upload of all PDFs in the docs directory.
+    """Orchestrate the complete document ingestion pipeline for legal knowledge base.
+
+    Processes all PDF legal documents through the full pipeline:
+    1. PDF-to-Markdown conversion with OCR and cleaning
+    2. Hierarchical text chunking with legal metadata
+    3. Batch vectorization and upload to Qdrant store
+
+    Implements caching to avoid reprocessing unchanged documents and memory management
+    to handle large legal corpora efficiently.
+
+    Args:
+        vector_store: Initialized Qdrant vector store for document embeddings
     """
     logger.info("📥 Starting Global Ingestion Sync...")
     pdf_files = list(Path(DOCS_DIR).glob("*.pdf"))
@@ -234,17 +315,17 @@ def run_ingestion_pipeline(vector_store: QdrantVectorStore):
     for pdf_path in tqdm.tqdm(pdf_files, desc="Processing Legal Library"):
         logger.debug(f"🔍 Checking sync status for: {pdf_path.stem}")
         md_path = SCRATCH_DIR / f"{pdf_path.stem}.md"
-        
-        # 1. Convert if not cached
+
+        # Phase 1: Convert PDF to clean Markdown (cached)
         if not md_path.exists():
             convert_pdf_to_md(str(pdf_path), str(md_path))
             if torch.cuda.is_available():
-                torch.cuda.empty_cache()        
-        
-        # 2. Extract Chunks
+                torch.cuda.empty_cache()
+
+        # Phase 2: Extract structured chunks with legal metadata
         chunks = get_chunks_from_md(str(md_path), pdf_path.stem.replace("_", " ").upper())
 
-        # 3. Batch Upload
+        # Phase 3: Batch upload to vector store with progress tracking
         if chunks:
             logger.info(f"🧠 Syncing {len(chunks)} snippets for {pdf_path.stem}...")
             batch_size = 20
@@ -255,7 +336,8 @@ def run_ingestion_pipeline(vector_store: QdrantVectorStore):
                     pbar.update(len(batch))
             logger.success(f"✅ Indexation Complete for {pdf_path.stem}")
 
-            del chunks
+            # Memory cleanup after each document
+            chunks.clear()
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()

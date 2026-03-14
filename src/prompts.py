@@ -1,7 +1,30 @@
+"""
+Specialized prompt templates for legal reasoning and compliance auditing.
+
+This module contains carefully engineered prompts that:
+- Enforce use of 2023 Indian legal codes (BNS, BNSS, BSA) over outdated ones
+- Implement multi-stage validation for legal accuracy
+- Provide domain-specific guidance for Indian legal system
+- Include safety mechanisms to prevent outdated law citations
+"""
+
 from loguru import logger
 from langchain_core.prompts import PromptTemplate, ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
 
 def get_qa_prompt():
+    """Generate the primary legal question-answering prompt template.
+
+    This prompt enforces strict adherence to 2023 Indian legal codes and provides
+    comprehensive guidance for legal advice generation. Key features:
+
+    - Temporal accuracy: Forces use of BNS/BNSS/BSA over IPC/CrPC/IEA
+    - Domain mapping: Provides specific section mappings for common legal issues
+    - Safety mechanisms: Requires citation verification against provided context
+    - Actionable guidance: Emphasizes procedural steps and practical remedies
+
+    Returns:
+        ChatPromptTemplate: Configured prompt for legal Q&A with system and human message templates
+    """
     logger.info("🎨 Initializing High-Density Legal Advisor Prompt...")
     
     system_template = """
@@ -51,8 +74,22 @@ def get_qa_prompt():
     return ChatPromptTemplate.from_messages(messages)
 
 def get_auditor_prompt():
+    """Generate the legal compliance auditing prompt template.
+
+    This prompt implements a rigorous validation system to ensure legal advice accuracy:
+    - Temporal verification: Checks for use of current 2023 laws vs outdated codes
+    - Citation validation: Verifies all cited sections exist in provided context
+    - Hallucination detection: Flags use of non-existent or incorrect legal references
+    - Quality scoring: Provides numerical assessment of legal accuracy
+
+    The auditor acts as a critical safeguard against outdated legal information
+    and ensures all advice is grounded in the verified statutory context.
+
+    Returns:
+        ChatPromptTemplate: Configured prompt for legal advice auditing
+    """
     logger.info("🎨 Initializing Production Legal Auditor Prompt...")
-    
+
     system_template = """
     # ROLE: High-Level Legal Compliance Auditor (India)
     # OBJECTIVE: Validate the ADVICE against the VERIFIED CONTEXT. 
@@ -90,17 +127,39 @@ def get_auditor_prompt():
     return ChatPromptTemplate.from_messages(messages)
 
 def mqr_prompt():
+    """Generate multi-query retrieval prompt for enhanced legal search.
+
+    Creates two complementary search queries to improve retrieval quality:
+    1. Substantive query: Focuses on legal rights and substantive law
+    2. Procedural query: Focuses on remedies and court procedures
+
+    This approach addresses the limitation of single queries by exploring
+    both the "what" (rights) and "how" (procedures) aspects of legal questions.
+
+    Returns:
+        PromptTemplate: Template for generating dual legal search queries
+    """
     return PromptTemplate.from_template("""
         You are a surgical legal searcher. Generate 2 search queries for: {question}
-        
         ### RULES:
-        1. Output ONLY the query strings. 
+        1. Output ONLY the query strings.
         2. NO numbering, NO "Query 1:", NO headers, NO bolding.
         3. Query 1: Focus on the substantive rights (e.g. breach of contract).
         4. Query 2: Focus on the procedural remedy (e.g. CPC Order 39).
     """)
 
 def get_router_prompt():
+    """Generate intent classification prompt for legal vs general queries.
+
+    Routes user messages to appropriate handling:
+    - LEGAL: Directs to legal research and advice pipeline
+    - CHAT: Handles general conversation and redirects to legal topics
+
+    This ensures the system stays focused on its legal expertise domain.
+
+    Returns:
+        PromptTemplate: Template for classifying user query intent
+    """
     return PromptTemplate.from_template("""
         Analyze the user's message and categorize it.
 
@@ -113,6 +172,17 @@ def get_router_prompt():
     """)
 
 def get_followup_classifier_prompt():
+    """Generate conversation continuity classification prompt.
+
+    Determines if user messages are follow-ups to previous legal advice or new topics:
+    - FOLLOW_UP: Clarification requests or next steps on existing advice
+    - NEW_TOPIC: Completely different legal issues or new fact patterns
+
+    This enables context-aware responses and appropriate retrieval strategies.
+
+    Returns:
+        PromptTemplate: Template for classifying conversation flow
+    """
     return PromptTemplate.from_template("""
         You are a Legal Conversation Monitor.
         Analyze the CURRENT_MESSAGE in the context of the PREVIOUS_ADVICE.
@@ -128,6 +198,14 @@ def get_followup_classifier_prompt():
     """)
 
 def get_chat_persona_prompt():
+    """Generate polite redirection prompt for non-legal conversations.
+
+    Maintains professional persona while gently steering users toward legal topics.
+    Acknowledges non-legal messages politely but redirects to core legal assistance role.
+
+    Returns:
+        PromptTemplate: Template for handling off-topic conversations
+    """
     return PromptTemplate.from_template("""
         You are the 'Legal Advisor System', a specialized AI for Indian Statutory Law.
         The user has sent a non-legal message: "{user_input}"
@@ -136,6 +214,5 @@ def get_chat_persona_prompt():
         1. Be polite, concise, and professional.
         2. Acknowledge their message (greeting/small talk).
         3. Gently pivot back to your primary role: assisting with legal research on the 17 verified statutes (BNS, CPC, TPA, etc.).
-        
         Example: "Hello! I'm doing well. I am ready to assist you with any legal queries or procedural research today. How can I help?"
     """)

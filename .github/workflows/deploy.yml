@@ -1,4 +1,4 @@
-name: Legal Advisor Deploy 
+name: Nyaya AI - Hugging Face Sync
 on:
   push:
     branches: [master]

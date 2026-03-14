@@ -1,9 +1,25 @@
+"""
+Nyaya AI Legal Consultation Agent - LangGraph-based RAG System for Indian Law
+
+This module implements a sophisticated legal research agent using LangGraph state machines.
+The agent orchestrates the complete RAG pipeline: query routing → legal research → response generation → quality auditing.
+
+Key Components:
+- ChatState: TypedDict managing conversation state and metadata
+- verify_citations_node: Post-generation audit for legal accuracy
+- retrieve_legal_context: Tool for searching legal documents
+- generate_response_node: Final answer synthesis with statutory grounding
+- call_tools_and_save_context: Tool execution and context management
+- chat_node: Intelligent routing and law classification
+- evaluate_response_node: Quality scoring and feedback generation
+"""
+
 import re
 import time
 from loguru import logger
 from .engine import get_retriever
 from langchain_core.tools import tool
-from langgraph.graph import  END, StateGraph
+from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from .config import NO_CONTEXT_MSG, llm, fast_llm
 from .utils import clean_feedback, prune_legal_context
@@ -11,95 +27,130 @@ from typing import Annotated, Optional, TypedDict, Union
 from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage, AIMessage
 from .prompts import get_qa_prompt, get_auditor_prompt, get_chat_persona_prompt, get_followup_classifier_prompt, get_router_prompt
 
-
+# Core state management for the legal conversation graph
 class ChatState(TypedDict):
-    messages: Annotated[list[BaseMessage], add_messages]
-    context: list[str]
-    evaluation_score: int
-    evaluation_feedback: str
-    retry_count: int
-    law_filter: Optional[str]
-    intent: str
-    is_followup: bool
+    messages: Annotated[list[BaseMessage], add_messages]  # Conversation history with automatic merging
+    context: list[str]  # Retrieved legal context snippets
+    evaluation_score: int  # Quality score (0-10) from auditor
+    evaluation_feedback: str  # Detailed feedback on response quality
+    retry_count: int  # Number of regeneration attempts
+    law_filter: Optional[str]  # Targeted legal act filter for search
+    intent: str  # Query classification: "LEGAL" or "CHAT"
+    is_followup: bool  # Whether this is a follow-up question
 
 
 def verify_citations_node(state: ChatState):
     """
-    Refined Auditor Node: Handles verdict prefixes and prevents report-style output.
+    Citation Verification Auditor - Ensures legal responses are grounded in actual statutes.
+
+    This critical quality control node audits AI-generated legal advice against retrieved context.
+    It prevents hallucinations by cross-referencing citations with verified legal sources.
+
+    Process:
+    1. Extract the proposed legal advice from conversation
+    2. Prune retrieved context to manageable size (6000 chars)
+    3. Use fast LLM to audit for accuracy and proper citations
+    4. Return either verified response or corrected version
+
+    Args:
+        state: Current conversation state with messages and context
+
+    Returns:
+        Updated state with verified/corrected legal response
     """
     logger.info("🛡️ Auditor: Starting citation verification process...")
 
     proposed_advice = state["messages"][-1].content
     raw_context = "\n\n".join(state.get("context", []))
     context_used = prune_legal_context(raw_context, max_chars=6000)
-    
+
     start_time = time.time()
     try:
         chain = get_auditor_prompt() | fast_llm
         audit_result = chain.invoke({
-            "advice": proposed_advice, 
+            "advice": proposed_advice,
             "context": context_used
         })
         duration = time.time() - start_time
-        
+
         audit_text = audit_result.content.strip()
 
-        # 🎯 PREFIX HANDLING LOGIC
+        # VERDICT-BASED RESPONSE HANDLING
+        # Auditor uses emoji prefixes to indicate verification status
         if audit_text.startswith("✅"):
-            # Scenario A: Advice is perfect. Keep original advisor response.
+            # Scenario A: Advice is perfect - use original response
             final_content = proposed_advice
             logger.success(f"✅ Auditor: Citations verified in {duration:.2f}s.")
         elif audit_text.startswith("🚨"):
-            # Scenario B: Corrections were made. Use the Auditor's version.
-            # Strip the emoji and any "REFINED ADVICE:" header if present
+            # Scenario B: Corrections needed - use auditor's refined version
             final_content = audit_text.replace("🚨", "").replace("REFINED ADVICE:", "").strip()
             logger.warning(f"🚨 Auditor: Hallucination corrected in {duration:.2f}s.")
         else:
-            # Fallback: If Auditor forgot the emoji but gave a response
+            # Fallback: Auditor didn't use expected format
             final_content = audit_text
             logger.info("🛡️ Auditor: Processed without explicit verdict symbol.")
 
-        # FINAL CLEANUP: Remove any remaining meta-commentary preambles
+        # Remove any remaining meta-commentary from the response
         final_content = re.sub(r"^(The provided advice is sound|I have corrected).*?\n+", "", final_content, flags=re.IGNORECASE).strip()
 
         return {"messages": [AIMessage(content=final_content)]}
 
     except Exception as e:
         logger.warning(f"⚠️ Auditor bypassed due to API error: {str(e)}")
-        # If Auditor fails, pass the original advice forward instead of crashing
+        # On audit failure, pass through original advice rather than crash
         return {"messages": [state["messages"][-1]]}
 
 @tool
 def retrieve_legal_context(query: str, law_filter: Optional[Union[str, list[str]]] = None):
     """
-    A high-density search for Indian Statutes. 
-    Handles Multi-Query Retrieval and applies payload filters with a Global Fallback.
+    High-density legal document search tool with intelligent filtering and fallback logic.
+
+    This tool performs semantic search across the Indian legal knowledge base using
+    hybrid retrieval (dense + sparse) with contextual compression and reranking.
+
+    Features:
+    - Multi-query expansion for comprehensive search
+    - Payload filtering by legal act (e.g., "BNS", "CPC")
+    - Dynamic thresholding based on query complexity
+    - Succession law redirection (ISA over HSA)
+    - Civil vs Criminal domain sanitization
+    - Global fallback for failed filtered searches
+
+    Args:
+        query: User's legal question
+        law_filter: Optional filter for specific legal acts
+
+    Returns:
+        Formatted string of verified legal references with citations
     """
     logger.info(f"🔍 AI is investigating: '{query}' | Filter: {law_filter}")
 
-    active_filter = None 
+    active_filter = None
 
-    # 2. Logic for Speed Optimization
+    # INTELLIGENT FILTERING LOGIC
+    # Optimize search strategy based on filter complexity
     if isinstance(law_filter, list):
         if len(law_filter) > 2:
             # Skip filtered search for complex multi-act queries to save time
-            active_filter = None 
+            active_filter = None
             logger.info("🚀 High complexity detected: Using Global Search for speed.")
         elif len(law_filter) > 0:
             active_filter = law_filter[0]
     else:
-        # It's a single string or None
+        # Single string filter or None
         active_filter = law_filter
 
-     # 1. Clean consolidated queries if chat_node joined them
+    # CLEAN CONSOLIDATED QUERIES
+    # Remove internal consolidation markers from multi-query expansion
     search_query = query.split(" | ")[0] if " | " in query else query
-    
+
     start_time = time.time()
     docs = get_retriever(fast_llm, law_name_filter=active_filter).invoke(search_query)
-    # 🚨 THE FALLBACK: If routing failed or returned junk, go Global
+
+    # GLOBAL FALLBACK: If filtered search returns insufficient results
     if not docs:
         logger.warning("⚠️ High-density filter returned insufficient context. Re-executing Global Search.")
-        docs = get_retriever(fast_llm, law_name_filter=None).invoke(search_query)   
+        docs = get_retriever(fast_llm, law_name_filter=None).invoke(search_query)
 
     duration = time.time() - start_time
     logger.info(f"⏱️ Retrieval completed in {duration:.2f}s. Evaluating {len(docs)} candidates...")
@@ -110,105 +161,131 @@ def retrieve_legal_context(query: str, law_filter: Optional[Union[str, list[str]
         law_ref = doc.metadata.get("law_name", "Unknown Law").lower()
         section = doc.metadata.get("section", "N/A")
 
-      # 3. SUCCESSION REDIRECTION BOOST (HSA -> ISA)
+        # SUCCESSION LAW REDIRECTION BOOST
+        # Prioritize Indian Succession Act over Hindu Succession Act for inheritance queries
         if any(x in query.lower() for x in ["inheritance", "succession", "will", "flat"]):
             if "indian succession" in law_ref:
                 score += 0.05
 
-        # 4. DYNAMIC THRESHOLDING
+        # DYNAMIC THRESHOLDING BASED ON LEGAL DOMAIN
+        # Adjust strictness based on whether the law deals with civil/family matters
         is_civil_or_cyber = any(x in law_ref for x in ["marriage", "civil", "contract", "property", "it act", "succession", "wage", "technology", "cyber", "ndps", "constitution", "cpc"])
-        if active_filter is None: # Global Search
-            threshold = 0.08  # Be more generous in Global Search
-        else:
-            threshold = 0.12 if is_civil_or_cyber else 0.22 # Be surgical in Filtered Search
-        
+
+        if active_filter is None:  # Global Search - be more permissive
+            threshold = 0.08
+        else:  # Filtered Search - be more surgical
+            threshold = 0.12 if is_civil_or_cyber else 0.22  # Civil laws need precision
+
         if score >= threshold:
+            # Truncate content to prevent token overflow while preserving key information
             truncated_content = doc.page_content[:700].strip() + "..."
             verified_references.append(f"--- VERIFIED REFERENCE: {law_ref.upper()} (Section {section}) ---\n{truncated_content}\n")
-    
+
+    # FORCE-ADD HIGH-SCORING CANDIDATES IF CONTEXT IS STARVED
     if len(verified_references) < 3 and active_filter is None:
         logger.warning("⚠️ Context starved. Force-adding top 3 candidates.")
         for doc in docs[:3]:
             law_ref = doc.metadata.get("law_name", "Unknown Law").upper()
             verified_references.append(f"--- VERIFIED REFERENCE: {law_ref} ---\n{doc.page_content[:500]}...")
 
-    if not verified_references:
-        logger.warning(f"⚠️ No verified context found for query: '{query}'")
-        return "I'm sorry, I couldn't find a high-confidence legal reference for this specific query."
 
     logger.success(f"⚖️ Found {len(verified_references)} high-confidence snippets.")
     return "\n\n".join(verified_references)
 
 def generate_response_node(state: ChatState):
     """
-    Synthesizes the final response. 
-    Handles: Persona-guarded Chat, Follow-up memory, and Statutary RAG.
-    """
+    Final Legal Response Synthesis - Combines retrieved context with statutory expertise.
 
+    This node generates the final legal advice by synthesizing verified context with
+    specialized legal knowledge. It handles both legal queries and general conversation,
+    with special logic for follow-up questions and temporal legal considerations.
+
+    Process:
+    1. Determine query intent (legal vs general chat)
+    2. For chat: Use persona-guided response
+    3. For legal: Synthesize advice with statutory grounding
+    4. Add temporal hints for pre-2024 incidents
+    5. Include source citations and disclaimers
+
+    Args:
+        state: Conversation state with context and metadata
+
+    Returns:
+        State update with final synthesized response
+    """
     intent = state.get("intent", "LEGAL")
     is_followup = state.get("is_followup", False)
+
+    # HANDLE GENERAL CONVERSATION WITH LEGAL PERSONA
     if intent == "CHAT":
         logger.info("👋 Pivot: Handling small talk with Persona Guardrail.")
         last_msg = state["messages"][-1].content
-        
-        # Using the Persona Prompt to keep the AI on-task
+
+        # Use specialized persona prompt to keep AI focused on legal expertise
         chat_prompt = get_chat_persona_prompt()
         response_content = fast_llm.invoke(
             chat_prompt.format(user_input=last_msg)
         ).content
         return {
-            "messages": [AIMessage(content=response_content)], 
-            "evaluation_score": 10, 
+            "messages": [AIMessage(content=response_content)],
+            "evaluation_score": 10,  # Auto-pass for non-legal chat
             "evaluation_feedback": "Professional pivot delivered."
         }
-    
+
+    # LEGAL RESPONSE SYNTHESIS
     logger.info("📝 Final Answer: Synthesizing legal guidance...")
-      
+
     # Count references for logging
     raw_context = state.get("context", [])
-    # 2. PRUNE the context to save tokens
+    # Prune context to stay within token limits while preserving legal integrity
     full_context = prune_legal_context(raw_context, max_chars=6000)
-    # Extract question for the log
+
+    # Extract question for logging and temporal analysis
     try:
         question = [m.content for m in state["messages"] if isinstance(m, HumanMessage)][-1]
-        # Temporal Guardrail: Check if the user is asking about an old incident (Pre-July 2024)
+        # Temporal guardrail: Detect pre-2024 incidents requiring IPC/CrPC references
         is_old_law = any(yr in question for yr in ["2020", "2021", "2022", "2023"])
     except (IndexError, AttributeError, StopIteration):
         question = "the user's request"
-        is_old_law = False 
+        is_old_law = False
 
-    logger.info(f"📊 CONTEXT READY: {len(full_context)} chars. Question: '{question[:50]}...'")  
+    logger.info(f"📊 CONTEXT READY: {len(full_context)} chars. Question: '{question[:50]}...'")
 
     if NO_CONTEXT_MSG in full_context or not full_context.strip():
         logger.warning(f"⚠️ No context found for: '{question[:50]}...'")
         return {"messages": [AIMessage(content="I'm sorry, I couldn't find a high-confidence reference.")]}
 
     logger.debug(f"📚 Synthesizing from {len(full_context)} verified snippets")
-    # 4. SYNTHESIS: Inject Temporal Hint into the question string
+
+    # ENHANCED QUESTION WITH TEMPORAL AND FOLLOWUP CONTEXT
     temporal_hint = " (Note: Incident is pre-July 2024, prioritize IPC/CrPC)" if is_old_law else ""
     followup_instruction = "\n(Instruction: This is a follow-up question. Use the provided context and previous discussion to clarify or expand.)" if is_followup else ""
+
     chain = get_qa_prompt() | llm
     start_time = time.time()
     response = chain.invoke({
-        "context": full_context, 
+        "context": full_context,
         "question": f"{question}{temporal_hint}{followup_instruction}"
     })
-   # 5. EMERGENCY MAPPING (Hallucination Recovery)
+
+    # EMERGENCY MAPPING: Handle cases where LLM refuses context
     if any(phrase in response.content for phrase in ["haven't provided", "specific legal query", "I cannot"]):
         logger.warning("🚨 Advisor tried to refuse context. Triggering emergency mapping.")
-        # Fallback to a direct prompt if the chain fails to respect the context
+        # Direct prompt bypass to force context usage
         emergency_prompt = f"Using this context: {full_context}\n\nAnswer this specific legal question: {question}"
         response = llm.invoke(emergency_prompt)
 
-    # 6. SOURCE & DISCLAIMER ASSEMBLY
-    # Extract unique source names from the breadcrumbs for the footer
+    # SOURCE CITATION ASSEMBLY
+    # Extract unique source names from verified reference markers
     sources = set()
     source_matches = re.findall(r"VERIFIED REFERENCE:\s*([^(|\n]+)", full_context)
     for s in source_matches:
         sources.add(s.strip())
-    
+
+    # Format source footer if sources found
     source_footer = "\n\n**Verified Sources Analyzed:**\n" + "\n".join([f"• {s}" for s in sorted(sources)]) if sources else ""
 
+    # MANDATORY LEGAL DISCLAIMER
     disclaimer = (
         "\n\n---\n"
         "**Disclaimer:** *This response is generated by an AI research assistant based on "
@@ -217,10 +294,10 @@ def generate_response_node(state: ChatState):
         "Consult with a qualified legal professional before taking action.*"
     )
 
-    # Append components
+    # Assemble final response with sources and disclaimer
     response.content += source_footer
     response.content += disclaimer
-    
+
     logger.success(f"⚖️ Final response generated in {time.time() - start_time:.2f}s")
 
     return {"messages": [response]}
