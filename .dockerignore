@@ -26,7 +26,6 @@ scratch/
 model_cache/
 huggingface/
 fastembed/
-docs/
 
 # --- Virtual Environments ---
 .venv/
