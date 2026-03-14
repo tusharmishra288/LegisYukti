@@ -51,7 +51,11 @@ class KeepAliveService:
 
         # Service endpoints
         self.hf_health_url = "http://localhost:7860/health"  # Streamlit health endpoint
-        self.qdrant_health_url = f"{QDRANT_URL}/health" if QDRANT_URL else None
+        if QDRANT_URL:
+            base_url = QDRANT_URL.rstrip('/')
+            self.qdrant_health_url = f"{base_url}/collections"
+        else:
+            self.qdrant_health_url = None
 
         logger.info(f"🔄 Keep-Alive Service initialized (interval: {interval_minutes}min)")
 
@@ -89,7 +93,7 @@ class KeepAliveService:
         try:
             # Use health endpoint or collections endpoint to keep service active
             headers = {"api-key": QDRANT_API_KEY}
-            response = requests.get(self.qdrant_health_url, headers=headers, timeout=5)
+            response = requests.get(self.qdrant_health_url, headers=headers, timeout=10)
 
             if response.status_code == 200:
                 logger.debug("✅ Qdrant Cloud ping successful")
