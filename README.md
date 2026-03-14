@@ -11,6 +11,7 @@ pinned: false
 
 # LegisYukti ⚖️
 ### *An Agentic RAG Framework for Multi-Document Reasoning*
+[![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/tusharmishra288/legisyukti-rag-engine)
 
 An experimental AI-powered legal reasoning platform that leverages **Agentic Retrieval-Augmented Generation (RAG)** to provide grounded insights into Indian law. **LegisYukti** focuses on structural text extraction and verified reasoning across a comprehensive knowledge base of 17+ primary statutes.
 
@@ -76,31 +77,35 @@ The system follows a modular RAG architecture. The runtime behavior is the same 
 
 ```mermaid
 flowchart TB
-    subgraph "Ingestion Stage"
-        X[Gazette PDFs] --> Refiner[Data Refiner]
-        Refiner --> Y[Qdrant Vector Store]
+    subgraph "Ingestion Stage (ETL Pipeline)"
+        A[Official Gazette PDFs] --> B[Data Refiner]
+        B -->|Structured Markdown| C[(Qdrant Vector Store)]
     end
 
-    subgraph "Persistence Stage"
-        M[Neon/Postgres Checkpoints]
+    subgraph "Persistence Layer"
+        D[(Neon PostgreSQL)]
     end
 
-    subgraph "Processing Stage"
-        C[LangGraph Agentic Flow] --> D{Query Type?}
-        D -->|"LEGAL"| E[Retrieve Context]
-        D -->|"CHAT"| F[General Response]
-
-        E --> G[Qdrant Semantic Search]
-        G --> H[Top Context Snippets]
-        H --> I[Reasoning & Synthesis]
-        I --> J[Citation Verification]
-        J --> K[Final Answer with Fidelity Score]
-
-        F --> K
+    subgraph "Agentic Reasoning Stage (LangGraph)"
+        E[Streamlit UI] <--> F[LangGraph Orchestrator]
+        F <--> D
+        
+        F --> G{Intention Router}
+        
+        G -->|General Query| H[Direct LLM Response]
+        G -->|Statutory Query| I[Query Refinement Agent]
+        
+        I --> J[Multi-Document Retrieval]
+        J <--> C
+        
+        J --> K[Context Synthesis Node]
+        K --> L[Citation & Fidelity Auditor]
+        L --> M[Final Verified Response]
+        
+        H --> M
     end
 
-    Z[Streamlit Interface] <--> C
-    M <--> C
+    M --> E
 ```
 > **Note:** The runtime logic (retrieval, LLM, citation auditing) stays the same regardless of deployment. Local Docker deployment is detailed in the deployment section below.
 
