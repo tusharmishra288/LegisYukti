@@ -46,6 +46,7 @@ class KeepAliveService:
         self.interval_seconds = interval_minutes * 60
         self.running = False
         self.thread: Optional[threading.Thread] = None
+        self.last_ping_time = 0
 
         # Service endpoints for qdrant
         if QDRANT_URL:
