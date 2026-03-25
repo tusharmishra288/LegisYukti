@@ -1,9 +1,9 @@
 """
-Keep-Alive Service for Hugging Face Spaces Free Tier
+Keep-Alive Service for Qdrant cluster Free Tier
 
-This module implements a background service that prevents both the Hugging Face Space
-and Qdrant Cloud from going to sleep during periods of inactivity. This is crucial
-for free tier deployments where services automatically sleep after ~15-30 minutes
+This module implements a background service that prevents Qdrant Cloud 
+from going to sleep during periods of inactivity. This is crucial for 
+free tier deployments where services automatically sleep after ~15-30 minutes
 of inactivity.
 
 The service runs in a background thread and performs periodic health checks:
@@ -32,12 +32,11 @@ class KeepAliveService:
     """
     Background service that keeps cloud services active on free tiers.
 
-    Runs periodic health checks to prevent Hugging Face Spaces and Qdrant Cloud
-    from sleeping due to inactivity. Optimized for minimal resource usage while
-    maintaining service availability.
+    Runs periodic health checks to prevent Qdrant Cloud from sleeping due to inactivity. 
+    Optimized for minimal resource usage while maintaining service availability.
     """
 
-    def __init__(self, interval_minutes: int = 10):
+    def __init__(self, interval_minutes: int = 15):
         """
         Initialize the keep-alive service.
 
@@ -47,10 +46,8 @@ class KeepAliveService:
         self.interval_seconds = interval_minutes * 60
         self.running = False
         self.thread: Optional[threading.Thread] = None
-        self.last_ping_time = 0
 
-        # Service endpoints
-        self.hf_health_url = "http://localhost:7860/health"  # Streamlit health endpoint
+        # Service endpoints for qdrant
         if QDRANT_URL:
             base_url = QDRANT_URL.rstrip('/')
             self.qdrant_health_url = f"{base_url}/collections"
@@ -58,26 +55,6 @@ class KeepAliveService:
             self.qdrant_health_url = None
 
         logger.info(f"🔄 Keep-Alive Service initialized (interval: {interval_minutes}min)")
-
-    def _ping_huggingface_space(self) -> bool:
-        """
-        Ping the Hugging Face Space to keep it active.
-
-        Returns:
-            bool: True if ping successful, False otherwise
-        """
-        try:
-            # Use a simple GET request to the health endpoint
-            response = requests.get(self.hf_health_url, timeout=5)
-            if response.status_code == 200:
-                logger.debug("✅ Hugging Face Space ping successful")
-                return True
-            else:
-                logger.warning(f"⚠️ Hugging Face Space returned status {response.status_code}")
-                return False
-        except requests.RequestException as e:
-            logger.warning(f"⚠️ Hugging Face Space ping failed: {e}")
-            return False
 
     def _ping_qdrant_cloud(self) -> bool:
         """
@@ -92,8 +69,8 @@ class KeepAliveService:
 
         try:
             # Use health endpoint or collections endpoint to keep service active
-            headers = {"api-key": QDRANT_API_KEY}
-            response = requests.get(self.qdrant_health_url, headers=headers, timeout=10)
+            headers = {"api-key": QDRANT_API_KEY, "User-Agent": "LegisYukti-KeepAlive/1.0"}
+            response = requests.get(self.qdrant_health_url, headers=headers, timeout=15)
 
             if response.status_code == 200:
                 logger.debug("✅ Qdrant Cloud ping successful")
@@ -116,20 +93,15 @@ class KeepAliveService:
                 current_time = time.time()
 
                 # Ping both services
-                hf_success = self._ping_huggingface_space()
                 qdrant_success = self._ping_qdrant_cloud()
 
                 self.last_ping_time = current_time
 
                 # Log status
-                if hf_success and qdrant_success:
-                    logger.info("🔄 Keep-Alive: Both services pinged successfully")
-                elif hf_success:
-                    logger.info("🔄 Keep-Alive: HF Space active, Qdrant ping failed")
-                elif qdrant_success:
-                    logger.info("🔄 Keep-Alive: Qdrant active, HF Space ping failed")
+                if qdrant_success:
+                    logger.info("🔄 Keep-Alive: Qdrant service pinged successfully")
                 else:
-                    logger.warning("⚠️ Keep-Alive: Both services ping failed")
+                    logger.warning("⚠️ Keep-Alive: Qdrant service ping failed")
 
             except Exception as e:
                 logger.error(f"❌ Keep-Alive Service error: {e}")

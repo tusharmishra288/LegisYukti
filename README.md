@@ -46,7 +46,7 @@ Unlike standard chatbots that may hallucinate, LegisYukti utilizes an **Agentic 
 - **Modern Web Interface**: Clean, professional Streamlit-based chat interface
 - **GPU Acceleration**: Optimized for NVIDIA GPU usage with CUDA support
 - **Persistent Conversations**: Neon (PostgreSQL-compatible) backed chat history and state management
-- **Free-Tier Keep‑Alive Service**: Automatically pings the app and Qdrant Cloud to prevent Hugging Face Spaces from sleeping
+- **Free-Tier Keep‑Alive Service**: Automatically pings the app and Qdrant Cloud to prevent it from sleeping
 - **Comprehensive Legal Knowledge Base**: Includes 17 major Indian legal documents covering criminal, civil, constitutional, and commercial law:
 
 | Legal Document | Year | Description |

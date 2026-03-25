@@ -11,6 +11,9 @@ from langgraph.checkpoint.postgres import PostgresSaver
 from langchain_core.messages import HumanMessage, AIMessage
 from PIL import Image
 
+# This prevents the app and Qdrant Cloud from sleeping due to inactivity
+keep_alive_service = start_keep_alive_service(interval_minutes=15)
+
 # Security: Disable the vulnerable PSD decoder entirely at the app level
 # This prevents potential image-based attacks by blocking PSD file processing
 if hasattr(Image, "register_extension"):
@@ -112,10 +115,6 @@ def init_system_core():
 
 # Initialize the core system components
 pool, graph = init_system_core()
-
-# Start keep-alive service for Hugging Face Spaces free tier
-# This prevents the app and Qdrant Cloud from sleeping due to inactivity
-keep_alive_service = start_keep_alive_service(interval_minutes=10)
 
 # --- 4. Persistent Logic Utilities ---
 # Utility functions for workspace management and audit logging
