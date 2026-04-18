@@ -26,6 +26,12 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Health check endpoint — must be checked immediately after page config so the
+# keep-alive self-ping returns quickly without triggering heavy UI rendering.
+if st.query_params.get("health") == "true":
+    st.json({"status": "healthy", "timestamp": time.time(), "service": "legisyukti"})
+    st.stop()
+
 # Auto-scroll JavaScript injection for smooth conversation flow
 # Monitors DOM changes and automatically scrolls to show latest messages
 st.components.v1.html("""<script>var body = window.parent.document.querySelector(".main");new MutationObserver(function() {body.scrollTop = body.scrollHeight;}).observe(body, {attributes: true, childList: true, subtree: true});</script>""", height=0)
@@ -114,7 +120,7 @@ def init_system_core():
 pool, graph = init_system_core()
 
 # This prevents the app and Qdrant Cloud from sleeping due to inactivity
-keep_alive_service = start_keep_alive_service(interval_minutes=15)
+keep_alive_service = start_keep_alive_service(interval_minutes=10)
 
 # --- 4. Persistent Logic Utilities ---
 # Utility functions for workspace management and audit logging
@@ -311,11 +317,6 @@ with st.sidebar:
 
 # --- 7. Main Chat Interface Rendering ---
 # Render the conversation history with audit scores and regeneration capabilities
-
-# Health check endpoint for keep-alive service (accessed via ?health=true)
-if st.query_params.get("health") == "true":
-    st.json({"status": "healthy", "timestamp": time.time(), "service": "legisyukti"})
-    st.stop()  # Stop execution to return only the JSON response
 
 st.title("⚖️ LegisYukti — An Agentic RAG Framework for Multi-Document Reasoning")
 st.markdown('<div class="disclaimer-hero"><b>⚠️ MANDATORY DISCLOSURE:</b> AI research or reasoning tool only. Statutory results must be cross-verified with Official Gazettes. No attorney-client relationship is formed.</div>', unsafe_allow_html=True)

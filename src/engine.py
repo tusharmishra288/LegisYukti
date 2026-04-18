@@ -99,7 +99,8 @@ def get_vector_store():
         logger.debug("✅  Sparse BM25 Embeddings ready")
 
         # Connect to Qdrant Cloud with authentication
-        client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
+        # timeout=30 prevents indefinite hangs when Qdrant wakes from inactivity sleep
+        client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, timeout=30)
         collection_name = "indian_legal_library"
 
         # Check if collection exists, create if not
