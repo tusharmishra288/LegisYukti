@@ -34,7 +34,7 @@ dependencies = [
     "streamlit>=1.54.0",
     "tqdm>=4.67.3",
     "transformers>=5.0.0",  # CVE-2026-1839: torch.load() without weights_only=True fixed in 5.0.0
-    "pillow==12.1.1",
+    "pillow==12.2.0",
     "torch>=2.10.0",  
     "torchvision>=0.25.0", 
     "torchaudio>=2.10.0"
@@ -43,7 +43,7 @@ dependencies = [
 [tool.uv]
 # Force 12.1.1 across all sub-dependencies (Docling/TorchVision etc)
 override-dependencies = [
-    "pillow>=12.1.1",
+    "pillow>=12.2.0",
     "grpcio<1.78.1"  # 1.78.1 is yanked — caused gcloud serverless outage
 ]
 index-strategy = "unsafe-best-match"
