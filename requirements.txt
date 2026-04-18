@@ -31,7 +31,7 @@ docling
 docling-core
 
 # --- Model Hubs & Transformers ---
-transformers
+transformers>=5.0.0  # CVE-2026-1839: insecure torch.load() fixed in 5.0.0
 sentence-transformers
 huggingface-hub
 hf-xet
