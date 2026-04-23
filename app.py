@@ -255,16 +255,52 @@ with st.sidebar:
     st.markdown('<div class="sidebar-label">Engine Analytics</div>', unsafe_allow_html=True)
     st.markdown(f'''<div class="engine-card"><div style="font-size:12px; margin-bottom:10px;"><span class="pulse-dot"></span><b>Vector Store:</b> Qdrant SSL ✅</div><div style="font-size:11px; color:#94a3b8;"><b>Index Depth:</b> 17 core PDFs<br><b>Status:</b> Ready</div></div>''', unsafe_allow_html=True)
 
-    # Keep-Alive Service Status for Hugging Face Spaces
+    # Keep-Alive Service Status — synced with internal KeepAliveService state
     from src.keep_alive import get_keep_alive_status
     keep_alive_status = get_keep_alive_status()
     if keep_alive_status:
-        status_icon = "🟢" if keep_alive_status["running"] else "🔴"
-        time_since = keep_alive_status.get("time_since_last_ping")
-        time_str = f"{time_since:.1f}min ago" if time_since else "Never"
-        st.markdown(f'''<div class="engine-card"><div style="font-size:12px; margin-bottom:10px;"><span style="color:#10b981;">{status_icon}</span><b> Keep-Alive Service:</b> Active</div><div style="font-size:11px; color:#94a3b8;"><b>Interval:</b> {keep_alive_status["interval_seconds"]//60}min<br><b>Last Ping:</b> {time_str}</div></div>''', unsafe_allow_html=True)
+        # Service is truly healthy only when both flag AND thread are alive
+        truly_running = keep_alive_status["running"] and keep_alive_status.get("thread_alive", False)
+        status_icon  = "🟢" if truly_running else "🔴"
+        status_text  = "Active" if truly_running else "Degraded"
+        status_color = "#10b981" if truly_running else "#ef4444"
+
+        # Convert raw seconds → human-readable "Xs ago" / "Xm Ys ago"
+        time_since_s = keep_alive_status.get("time_since_last_ping")
+        if time_since_s is None:
+            time_str = "Never"
+        elif time_since_s < 60:
+            time_str = f"{int(time_since_s)}s ago"
+        else:
+            m, s = divmod(int(time_since_s), 60)
+            time_str = f"{m}m {s}s ago"
+
+        st.markdown(
+            f'''<div class="engine-card">
+                <div style="font-size:12px; margin-bottom:10px;">
+                    <span style="color:{status_color};">{status_icon}</span>
+                    <b> Keep-Alive Service:</b> {status_text}
+                </div>
+                <div style="font-size:11px; color:#94a3b8;">
+                    <b>Interval:</b> {keep_alive_status["interval_seconds"]//60}min<br>
+                    <b>Last Ping:</b> {time_str}<br>
+                    <b>HF Space:</b> {"✅" if keep_alive_status.get("hf_space_url") else "⚠️ not set"}&nbsp;
+                    <b>Qdrant:</b> {"✅" if keep_alive_status.get("qdrant_url") else "⚠️ not set"}
+                </div>
+            </div>''',
+            unsafe_allow_html=True
+        )
     else:
-        st.markdown('''<div class="engine-card"><div style="font-size:12px; margin-bottom:10px;"><span style="color:#ef4444;">🔴</span><b> Keep-Alive Service:</b> Inactive</div><div style="font-size:11px; color:#94a3b8;">Free tier protection disabled</div></div>''', unsafe_allow_html=True)
+        st.markdown(
+            '''<div class="engine-card">
+                <div style="font-size:12px; margin-bottom:10px;">
+                    <span style="color:#ef4444;">🔴</span>
+                    <b> Keep-Alive Service:</b> Inactive
+                </div>
+                <div style="font-size:11px; color:#94a3b8;">Free tier protection disabled</div>
+            </div>''',
+            unsafe_allow_html=True
+        )
     
     with st.expander("📚 LEGAL KNOWLEDGE BASE"):
         st.markdown("""
