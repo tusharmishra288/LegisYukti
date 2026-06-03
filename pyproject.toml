@@ -7,7 +7,7 @@ requires-python = "==3.12.*"
 dependencies = [
     "colorlog>=6.10.1",
     "docling>=2.74.0",
-    "docling-core>=2.65.1",
+    "docling-core>=2.74.1",
     "fastembed>=0.7.4",
     "flashrank>=0.2.10",
     "hf-xet>=1.2.0",
