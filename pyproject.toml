@@ -35,7 +35,7 @@ dependencies = [
     "tqdm>=4.67.3",
     "transformers>=5.0.0",  # CVE-2026-1839: torch.load() without weights_only=True fixed in 5.0.0
     "pillow==12.2.0",
-    "torch>=2.10.0",  
+    "torch>=2.13.0",  
     "torchvision>=0.25.0", 
     "torchaudio>=2.10.0"
 ]
