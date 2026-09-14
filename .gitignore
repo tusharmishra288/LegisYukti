@@ -33,3 +33,4 @@ Thumbs.db
 # full answer + context text, so they are large and churn on every run.
 # Force-add a reference run if you want it versioned:  git add -f eval/results/baseline-final.json
 eval/results/
+LegisYukti_Interview_Prep.md
