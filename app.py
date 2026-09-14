@@ -7,6 +7,8 @@ from src.agent import create_graph
 from src.engine import get_vector_store
 from src.processor import run_ingestion_pipeline
 from src.keep_alive import start_keep_alive_service
+from src.telemetry import start_trace, finish_trace, get_callbacks
+from src.streaming import iter_answer, final_answer_from_messages
 from langgraph.checkpoint.postgres import PostgresSaver
 from langchain_core.messages import HumanMessage, AIMessage
 from PIL import Image
@@ -177,29 +179,41 @@ def run_research_logic(prompt, is_regen=False):
     status_ui = st.status("📡 Engaging Statutory Intelligence Core...", expanded=False)
     advice_buffer = ""
 
-    # Stream processing with message filtering (exclude internal tool messages)
-    for chunk, metadata in graph.stream({"messages": [HumanMessage(content=prompt)]}, config=config, stream_mode="messages"):
-        node = metadata.get("langgraph_node", "")
-        if isinstance(chunk, AIMessage) and node in ["generate_response", "final_answer"]:
-            # Filter out internal tool messages (context storage notifications)
-            if any(x in chunk.content.lower() for x in ["context stored", "penalty:"]): continue
-            advice_buffer = chunk.content
+    # Latency instrumentation. The callbacks ride along on the graph config so they
+    # also capture LLM and retriever calls nested inside MultiQueryRetriever and
+    # ContextualCompressionRetriever, which are invisible from the node functions.
+    trace = start_trace(prompt)
+    stream_config = {**config, "callbacks": get_callbacks()}
 
-    status_ui.update(label="✅ Analysis Complete", state="complete")
-
-    # Display the response in chat format
+    # Render inside the chat bubble so tokens appear as they arrive.
     with st.chat_message("assistant"):
         placeholder = st.empty()
-        streamed = ""
-        # Simulate streaming effect for better UX
-        for word in advice_buffer.split(' '):
-            streamed += word + " "
-            placeholder.markdown(streamed + "▌")  # Cursor effect
-            time.sleep(0.01)
+
+        try:
+            # Token deltas, accumulated; a retry restarts the draft. See src/streaming.py.
+            for partial in iter_answer(
+                graph.stream({"messages": [HumanMessage(content=prompt)]},
+                             config=stream_config, stream_mode="messages")
+            ):
+                advice_buffer = partial
+                placeholder.markdown(partial + " ▌")
+        finally:
+            # Always close the trace, even if the pipeline raises, so a failed query
+            # still reports where its time went.
+            finish_trace(trace)
+
+        advice_buffer = advice_buffer.strip()
+        status_ui.update(label="✅ Analysis Complete", state="complete")
 
         # Immediately persist audit data for UI display
         final_state = graph.get_state(config).values
         final_msgs = final_state.get("messages", [])
+
+        # verify_citations_node may replace the synthesised answer, so the last
+        # non-empty AIMessage in the checkpoint is what the user should end up with.
+        advice_buffer = final_answer_from_messages(final_msgs) or advice_buffer
+        placeholder.markdown(advice_buffer)   # drop the cursor, show final text
+
         if final_msgs and isinstance(final_msgs[-1], AIMessage):
             msg_id = final_msgs[-1].id
             sc = final_state.get("evaluation_score", 0)

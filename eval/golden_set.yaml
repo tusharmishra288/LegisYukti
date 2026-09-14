@@ -1,0 +1,151 @@
+# LegisYukti golden set
+#
+# ⚠️  REVIEW THESE BEFORE TRUSTING THE NUMBERS. The section numbers below are seed
+# values and you are the domain owner - correct anything wrong and extend to ~50
+# questions. Coverage targets: every Act in the corpus, and a realistic mix of
+#   single-act / cross-act / procedural / follow-up / small-talk.
+#
+# Fields
+#   id                 stable slug; results are keyed on it across runs
+#   question           what the user types
+#   category           single-act | cross-act | procedural | followup | chat
+#   expected_acts      Acts that MUST appear in retrieved context
+#   expected_sections  Act -> sections. Omit or leave empty to score on Act
+#                      presence alone, which is right when several sections
+#                      would each be a defensible citation.
+#   must_not_cite      Acts the answer must NOT rely on. Use this to pin
+#                      regressions - misroutes that have bitten before.
+#   notes              why this case is in the set
+
+- id: tpa-eviction-notice
+  question: "My landlord is evicting me from my flat without giving any notice. What are my rights?"
+  category: single-act
+  expected_acts: ["TRANSFER OF PROPERTY ACT 1882"]
+  expected_sections:
+    "TRANSFER OF PROPERTY ACT 1882": ["106", "111"]
+  must_not_cite: ["INDIAN SUCCESSION ACT 1925"]
+  notes: >
+    REGRESSION PIN. The word "flat" is a keyword under Indian Succession Act in
+    routing_map, and active_filter = law_filter[0] then picks it by dict insertion
+    order. Retrieval gets hard-filtered to inheritance law for a tenancy question.
+
+- id: hma-divorce-grounds
+  question: "What are the grounds for divorce under the Hindu Marriage Act?"
+  category: single-act
+  expected_acts: ["THE HINDU MARRIAGE ACT 1955"]
+  expected_sections:
+    "THE HINDU MARRIAGE ACT 1955": ["13"]
+  notes: >
+    REGRESSION PIN. LEGAL_LIBRARY stores 'THE HINDU MARRIAGE ACT 1955 ' with a
+    trailing space, so the Qdrant filter matches zero points and every divorce
+    query silently pays the global-fallback path. See eval/invariants.py.
+
+- id: ndps-possession
+  question: "What is the punishment for possession of a small quantity of cannabis?"
+  category: single-act
+  expected_acts: ["NARCOTIC DRUGS AND PSYCHOTROPIC SUBSTANCES ACT 1985"]
+  expected_sections: {}
+  notes: >
+    REGRESSION PIN. LEGAL_LIBRARY spells it PYSCHOTROPIC; the stored law_name from
+    the filename is PSYCHOTROPIC. Filtered search can never match.
+
+- id: ni-cheque-bounce
+  question: "My cheque bounced. What legal action can be taken against me?"
+  category: single-act
+  expected_acts: ["NEGOTIABLE INSTRUMENTS ACT 1881"]
+  expected_sections:
+    "NEGOTIABLE INSTRUMENTS ACT 1881": ["138"]
+  notes: "High-confidence keyword route; should never hit the fallback."
+
+- id: contract-breach-damages
+  question: "A vendor took my advance and never delivered. What can I claim?"
+  category: cross-act
+  expected_acts: ["THE INDIAN CONTRACT ACT 1872"]
+  expected_sections:
+    "THE INDIAN CONTRACT ACT 1872": ["73"]
+  notes: "No obvious keyword; exercises the LLM law-guess fallback path."
+
+- id: gift-deed-registration
+  question: "Is a gift deed of immovable property valid without registration?"
+  category: cross-act
+  expected_acts: ["TRANSFER OF PROPERTY ACT 1882", "REGISTRATION ACT 1908"]
+  expected_sections:
+    "TRANSFER OF PROPERTY ACT 1882": ["123"]
+    "REGISTRATION ACT 1908": ["17"]
+  notes: >
+    Genuinely spans two Acts. Hard pre-filtering can only pick one, so this is the
+    case that most directly argues for the soft-prior refactor.
+
+- id: will-execution
+  question: "What makes a will legally valid in India?"
+  category: single-act
+  expected_acts: ["INDIAN SUCCESSION ACT 1925"]
+  expected_sections:
+    "INDIAN SUCCESSION ACT 1925": ["63"]
+  notes: "The Act that the eviction question wrongly routes to; keep both in the set."
+
+- id: injunction-procedure
+  question: "How do I get a stay order to stop construction on disputed land?"
+  category: procedural
+  expected_acts: ["CODE OF CIVIL PROCEDURE CPC 1908"]
+  expected_sections: {}
+  notes: "Procedural query; tests the CPC auto-injection bridge."
+
+- id: fir-refusal
+  question: "The police are refusing to register my FIR. What do I do?"
+  category: procedural
+  expected_acts: ["BHARATIYA NAGARIK SURAKSHA SANHITA BNSS 2023"]
+  expected_sections: {}
+  notes: "Post-2023 procedural code; check it does not answer from CrPC memory."
+
+- id: online-fraud
+  question: "Someone impersonated me on WhatsApp and took money from my friend."
+  category: single-act
+  expected_acts: ["INFORMATION TECHNOLOGY ACT 2000"]
+  expected_sections: {}
+  notes: "Cyber keyword route."
+
+- id: wages-withheld
+  question: "My employer has not paid my salary for three months."
+  category: single-act
+  expected_acts: ["CODE ON WAGES 2019"]
+  expected_sections: {}
+  notes: "Civil route; triggers CPC auto-injection, so filter length becomes 2."
+
+- id: court-marriage
+  question: "We are from different religions and want a court marriage. What is the process?"
+  category: single-act
+  expected_acts: ["SPECIAL MARRIAGE ACT 1954"]
+  expected_sections: {}
+  notes: "Distinguish from Hindu Marriage Act; both are marriage statutes."
+
+- id: consumer-defective
+  question: "I bought a defective washing machine and the seller refuses a refund."
+  category: single-act
+  expected_acts: ["CONSUMER PROTECTION ACT 2019"]
+  expected_sections: {}
+
+- id: fundamental-rights
+  question: "Which fundamental right protects personal liberty?"
+  category: single-act
+  expected_acts: ["CONSTITUTION OF INDIA FUNDAMENTAL RIGHTS"]
+  expected_sections:
+    "CONSTITUTION OF INDIA FUNDAMENTAL RIGHTS": ["21"]
+  notes: "Uses Article, not Section - exercises the Article branch of the extractor."
+
+- id: followup-alimony
+  question: "And what about maintenance during the case?"
+  category: followup
+  depends_on: hma-divorce-grounds
+  expected_acts: ["THE HINDU MARRIAGE ACT 1955"]
+  expected_sections: {}
+  notes: >
+    Must run immediately after hma-divorce-grounds on the same thread. Tests the
+    follow-up classifier, which skips retrieval and reuses existing context.
+
+- id: chat-greeting
+  question: "Hello, what can you help me with?"
+  category: chat
+  expected_acts: []
+  expected_sections: {}
+  notes: "Must skip RAG entirely: 1 LLM call, no retrieval span in the trace."
