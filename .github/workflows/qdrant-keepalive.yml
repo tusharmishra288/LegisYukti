@@ -1,0 +1,134 @@
+name: Qdrant Keep-Alive
+
+# Qdrant Cloud free-tier clusters are SUSPENDED after 1 week of inactivity and
+# DELETED after 4 weeks. The in-app keep-alive (src/keep_alive.py) cannot be
+# relied on for this: it runs inside the Hugging Face Space, which sleeps on
+# free hardware after a period with no visitors — and its thread only starts
+# when a browser session first executes app.py. Once the Space sleeps, the
+# pinger sleeps with it, which is exactly when the cluster starts idling.
+#
+# This workflow is the fix: an EXTERNAL heartbeat that does not depend on the
+# Space being awake, or on anyone visiting it.
+
+on:
+  schedule:
+    # Every 6 hours. Well inside Qdrant's 1-week suspension window, with enough
+    # headroom to absorb GitHub's best-effort cron delays and a few failed runs.
+    - cron: '0 */6 * * *'
+  workflow_dispatch:  # Manual run — also re-arms the schedule if GitHub disables
+                      # it after 60 days of repository inactivity.
+
+# Prevent overlapping runs if a wake-up takes longer than expected.
+concurrency:
+  group: qdrant-keepalive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    name: Ping Qdrant Cloud
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      QDRANT_URL: ${{ secrets.QDRANT_URL }}
+      QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
+      COLLECTION: indian_legal_library
+
+    steps:
+      - name: Verify secrets are configured
+        run: |
+          set -euo pipefail
+          missing=0
+          if [ -z "${QDRANT_URL}" ]; then
+            echo "::error::Repository secret QDRANT_URL is not set."
+            missing=1
+          fi
+          if [ -z "${QDRANT_API_KEY}" ]; then
+            echo "::error::Repository secret QDRANT_API_KEY is not set."
+            missing=1
+          fi
+          [ "$missing" -eq 0 ] || exit 1
+
+      - name: Ping cluster with a real data-plane query
+        run: |
+          set -uo pipefail
+
+          # A `scroll` against the actual collection, rather than GET /collections.
+          # Qdrant does not document what it counts as "activity", so this issues a
+          # genuine read against the data plane instead of a control-plane listing.
+          # limit=1 with no payload and no vectors keeps it effectively free.
+          BASE="${QDRANT_URL%/}"
+          ENDPOINT="${BASE}/collections/${COLLECTION}/points/scroll"
+
+          for attempt in 1 2 3; do
+            echo "Attempt ${attempt}/3 — POST /collections/${COLLECTION}/points/scroll"
+
+            CODE=$(curl -sS -o /tmp/qdrant.json -w '%{http_code}' \
+              --max-time 90 \
+              -X POST "${ENDPOINT}" \
+              -H "api-key: ${QDRANT_API_KEY}" \
+              -H "Content-Type: application/json" \
+              -H "User-Agent: LegisYukti-KeepAlive-CI/1.0" \
+              -d '{"limit": 1, "with_payload": false, "with_vector": false}')
+            CODE="${CODE:-000}"
+
+            if [ "$CODE" = "200" ]; then
+              echo "✅ Qdrant responded 200 — cluster is awake and serving reads."
+              exit 0
+            fi
+
+            echo "⚠️  HTTP ${CODE}."
+            # Response bodies are Qdrant errors, not secrets, but cap the output.
+            head -c 500 /tmp/qdrant.json 2>/dev/null || true
+            echo
+
+            # A suspended free-tier cluster can take a while to resume, so give it
+            # room before declaring failure.
+            if [ "$attempt" -lt 3 ]; then
+              echo "Retrying in 45s..."
+              sleep 45
+            fi
+          done
+
+          echo "::error::Qdrant did not return 200 after 3 attempts (last status: ${CODE}). The cluster may be suspended, the collection may be missing, or the API key may have been rotated."
+          exit 1
+
+      - name: Report collection size
+        # Informational only — a green run with 0 points means the cluster is alive
+        # but the legal corpus is gone and app.py will silently re-ingest on next boot.
+        if: success()
+        run: |
+          set -uo pipefail
+          BASE="${QDRANT_URL%/}"
+
+          CODE=$(curl -sS -o /tmp/collection.json -w '%{http_code}' \
+            --max-time 60 \
+            "${BASE}/collections/${COLLECTION}" \
+            -H "api-key: ${QDRANT_API_KEY}")
+          CODE="${CODE:-000}"
+
+          if [ "$CODE" != "200" ]; then
+            echo "::warning::Could not read collection metadata (HTTP ${CODE})."
+            exit 0
+          fi
+
+          POINTS=$(jq -r '.result.points_count // "unknown"' /tmp/collection.json)
+          STATUS=$(jq -r '.result.status // "unknown"' /tmp/collection.json)
+
+          echo "Collection : ${COLLECTION}"
+          echo "Status     : ${STATUS}"
+          echo "Points     : ${POINTS}"
+
+          {
+            echo "### Qdrant Keep-Alive"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Collection | \`${COLLECTION}\` |"
+            echo "| Status | ${STATUS} |"
+            echo "| Points | ${POINTS} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$POINTS" = "0" ]; then
+            echo "::warning::Cluster is alive but the collection is EMPTY — the legal corpus needs re-ingestion."
+          fi

@@ -48,3 +48,7 @@ Dockerfile
 README.md
 LICENSE
 tests/
+
+# --- Dev tooling: not needed at runtime, keeps the Space image slim ---
+eval/
+scripts/
