@@ -18,6 +18,7 @@ import re
 import time
 from loguru import logger
 from .engine import get_retriever
+from .telemetry import timed_node, span
 from langchain_core.tools import tool
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
@@ -39,6 +40,7 @@ class ChatState(TypedDict):
     is_followup: bool  # Whether this is a follow-up question
 
 
+@timed_node
 def verify_citations_node(state: ChatState):
     """
     Citation Verification Auditor - Ensures legal responses are grounded in actual statutes.
@@ -145,12 +147,18 @@ def retrieve_legal_context(query: str, law_filter: Optional[Union[str, list[str]
     search_query = query.split(" | ")[0] if " | " in query else query
 
     start_time = time.time()
-    docs = get_retriever(fast_llm, law_name_filter=active_filter).invoke(search_query)
+    with span("retrieval:primary"):
+        docs = get_retriever(fast_llm, law_name_filter=active_filter).invoke(search_query)
 
     # GLOBAL FALLBACK: If filtered search returns insufficient results
+    # NOTE: this re-runs the ENTIRE pipeline - multi-query expansion (an LLM call),
+    # the hybrid searches, and the cross-encoder rerank. It roughly doubles retrieval
+    # latency whenever a filtered search comes back empty, so the trace records it
+    # separately to show how often that happens.
     if not docs:
         logger.warning("⚠️ High-density filter returned insufficient context. Re-executing Global Search.")
-        docs = get_retriever(fast_llm, law_name_filter=None).invoke(search_query)
+        with span("retrieval:fallback-global"):
+            docs = get_retriever(fast_llm, law_name_filter=None).invoke(search_query)
 
     duration = time.time() - start_time
     logger.info(f"⏱️ Retrieval completed in {duration:.2f}s. Evaluating {len(docs)} candidates...")
@@ -192,6 +200,7 @@ def retrieve_legal_context(query: str, law_filter: Optional[Union[str, list[str]
     logger.success(f"⚖️ Found {len(verified_references)} high-confidence snippets.")
     return "\n\n".join(verified_references)
 
+@timed_node
 def generate_response_node(state: ChatState):
     """
     Final Legal Response Synthesis - Combines retrieved context with statutory expertise.
@@ -302,6 +311,7 @@ def generate_response_node(state: ChatState):
 
     return {"messages": [response]}
 
+@timed_node
 def call_tools_and_save_context(state: ChatState):
     """Simple Tool Node: Runs the tool and saves context."""
     last_msg = state["messages"][-1]
@@ -329,6 +339,7 @@ def call_tools_and_save_context(state: ChatState):
         "context": new_contexts
     }
 
+@timed_node
 def chat_node(state: ChatState):
     """Identifies the correct law for filtering and enforces tool-call efficiency."""
     logger.info("🧠 Agent: Analyzing conversation state...")
@@ -345,7 +356,7 @@ def chat_node(state: ChatState):
         "BHARATIYA SAKSHYA ADHINIYAM BSA 2023",
         "CODE OF CIVIL PROCEDURE CPC 1908",
         "INDIAN SUCCESSION ACT 1925",
-        "THE HINDU MARRIAGE ACT 1955 ",
+        "THE HINDU MARRIAGE ACT 1955",
         "SPECIAL MARRIAGE ACT 1954",
         "THE INDIAN CONTRACT ACT 1872",
         "TRANSFER OF PROPERTY ACT 1882",
@@ -354,7 +365,7 @@ def chat_node(state: ChatState):
         "CODE ON WAGES 2019",
         "CONSUMER PROTECTION ACT 2019",
         "INFORMATION TECHNOLOGY ACT 2000",
-        "NARCOTIC DRUGS AND PYSCHOTROPIC SUBSTANCES ACT 1985",
+        "NARCOTIC DRUGS AND PSYCHOTROPIC SUBSTANCES ACT 1985",
         "POCSO ACT 2012",
         "CONSTITUTION OF INDIA FUNDAMENTAL RIGHTS"
     ]
@@ -366,7 +377,7 @@ def chat_node(state: ChatState):
         "BHARATIYA SAKSHYA ADHINIYAM BSA 2023": ["bsa", "evidence", "witness", "testimony"],
         "CODE OF CIVIL PROCEDURE CPC 1908": ["cpc", "plaint", "written statement", "summons", "jurisdiction", "stay of suit", "injunction"],
         "INDIAN SUCCESSION ACT 1925": ["inheritance", "succession", "will", "flat", "share", "probate", "intestate"],
-        "THE HINDU MARRIAGE ACT 1955 ": ["divorce", "alimony", "maintenance", "hindu marriage", "custody"],
+        "THE HINDU MARRIAGE ACT 1955": ["divorce", "alimony", "maintenance", "hindu marriage", "custody"],
         "SPECIAL MARRIAGE ACT 1954": ["court marriage", "inter-religion marriage", "civil marriage"],
         "THE INDIAN CONTRACT ACT 1872": ["agreement", "breach", "contract", "consideration"],
         "TRANSFER OF PROPERTY ACT 1882": ["sale", "gift", "mortgage", "lease", "possession", "tenant"],
@@ -375,7 +386,7 @@ def chat_node(state: ChatState):
         "CODE ON WAGES 2019": ["salary", "wage", "firing", "dues", "termination"],
         "CONSUMER PROTECTION ACT 2019": ["defective", "service deficiency", "consumer court"],
         "INFORMATION TECHNOLOGY ACT 2000": ["cyber", "whatsapp", "hacking", "online fraud", "it act"],
-        "NARCOTIC DRUGS AND PYSCHOTROPIC SUBSTANCES ACT 1985": ["drugs", "narcotics", "trafficking", "ganja", "cannabis", "ndps"],
+        "NARCOTIC DRUGS AND PSYCHOTROPIC SUBSTANCES ACT 1985": ["drugs", "narcotics", "trafficking", "ganja", "cannabis", "ndps"],
         "POCSO ACT 2012": ["child", "sexual offense", "minor", "pocso"],
         "CONSTITUTION OF INDIA FUNDAMENTAL RIGHTS": ["fundamental rights", "article", "writ petition", "supreme court", "constitution"]
     }
@@ -387,8 +398,8 @@ def chat_node(state: ChatState):
             routing_confidence = "HIGH"
     
     # 🎯 GENERALIZED PROCEDURAL BRIDGE
-    civil_laws = ["INDIAN SUCCESSION ACT 1925", "THE HINDU MARRIAGE ACT 1955 ", "SPECIAL MARRIAGE ACT 1954", "THE INDIAN CONTRACT ACT 1872", "TRANSFER OF PROPERTY ACT 1882", "REGISTRATION ACT 1908", "CODE ON WAGES 2019", "CONSUMER PROTECTION ACT 2019"]
-    criminal_laws = ["BHARATIYA NYAYA SANHITA BNS 2023", "BHARATIYA SAKSHYA ADHINIYAM BSA 2023", "POCSO ACT 2012", "NARCOTIC DRUGS AND PYSCHOTROPIC SUBSTANCES ACT 1985"]
+    civil_laws = ["INDIAN SUCCESSION ACT 1925", "THE HINDU MARRIAGE ACT 1955", "SPECIAL MARRIAGE ACT 1954", "THE INDIAN CONTRACT ACT 1872", "TRANSFER OF PROPERTY ACT 1882", "REGISTRATION ACT 1908", "CODE ON WAGES 2019", "CONSUMER PROTECTION ACT 2019"]
+    criminal_laws = ["BHARATIYA NYAYA SANHITA BNS 2023", "BHARATIYA SAKSHYA ADHINIYAM BSA 2023", "POCSO ACT 2012", "NARCOTIC DRUGS AND PSYCHOTROPIC SUBSTANCES ACT 1985"]
 
     if any(law in detected_laws for law in civil_laws):
         if "CODE OF CIVIL PROCEDURE CPC 1908" not in detected_laws:
@@ -465,6 +476,7 @@ def route_after_agent(state: ChatState):
     logger.info("🏁 Agent: No tool calls. Proceeding to Final Synthesis.")
     return "finalize"
 
+@timed_node
 def evaluate_response_node(state: ChatState):
     intent = state.get("intent", "LEGAL")
     
@@ -489,10 +501,25 @@ def evaluate_response_node(state: ChatState):
         SCORE: <number>
         REASON: <concise summary>
 
-        ### SCORING RULES:
-        1. **CONTRACT/PROPERTY:** Must cite TPA or Contract Act and CPC Order 39.
-        2. **HALLUCINATION:** Deduct 3 points if it cites the 'Succession Act' for a Contract case.
-        3. **PROCEDURE:** Must include a roadmap with CPC or BNSS.
+        ### HOW TO SCORE (0-10)
+        Judge ONLY these, in this order:
+        1. GROUNDING: is every statutory claim supported by the CONTEXT?
+        2. ACCURACY: are the Act names and section numbers correct as cited?
+        3. COMPLETENESS: does it answer the question that was actually asked?
+
+        ### DOMAIN CHECKS - CONDITIONAL, NOT MANDATORY
+        Apply a check ONLY if the question falls in that domain. A check that does
+        not apply is NOT a defect and MUST NOT reduce the score.
+        - Contract or property dispute -> expect the Contract Act or Transfer of
+          Property Act, and CPC Order 39 only where interim relief is in issue.
+        - Question about procedure -> expect a roadmap citing the relevant
+          procedural code: CPC for civil matters, BNSS for criminal ones.
+        - Any domain -> deduct 3 if it relies on an Act irrelevant to the question
+          (for example the Succession Act in a contract dispute).
+
+        A marriage, cyber, wages, narcotics or consumer question that never
+        mentions the Contract Act, the Transfer of Property Act, CPC or BNSS is
+        CORRECT, not deficient. Score it on grounding, accuracy and completeness.
 
         RESPONSE: {clean_response}
         CONTEXT: {context_for_eval}
@@ -543,6 +570,7 @@ def route_after_evaluation(state: ChatState):
     
     return "end"
     
+@timed_node
 def retry_prep_node(state: ChatState):
     """Adds a hint to the conversation so the agent knows WHY it's retrying."""
     feedback = state.get("evaluation_feedback", "Improve accuracy.")
@@ -553,6 +581,7 @@ def retry_prep_node(state: ChatState):
         "retry_count": state.get("retry_count", 0) + 1
     }
 
+@timed_node
 def router_node(state: ChatState):
     messages = state["messages"]
     last_msg = messages[-1].content
