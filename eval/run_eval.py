@@ -141,27 +141,95 @@ def score_case(case: dict, result: dict) -> dict:
     }
 
 
+QUALITY_METRICS = ("section_recall", "act_recall", "citation_precision")
+COST_METRICS = ("total_s", "llm_calls", "retrieval_s")
+RATE_METRICS = ("used_fallback", "retried")
+
+
+def _median(values: list[float]) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    return ordered[mid] if len(ordered) % 2 else (ordered[mid - 1] + ordered[mid]) / 2
+
+
+def aggregate_cases(rows: list[dict]) -> dict[str, dict]:
+    """Collapse repeated runs of the same case into a median and a spread.
+
+    This pipeline is nondeterministic - the dispatcher and the multi-query
+    expansion write different search text on every run, so retrieval returns
+    different Acts - which means a single run of a case is a sample, not a
+    measurement. The median resists a single wild run; max-min is the empirical
+    noise for that case, and compare.py refuses to call anything a regression
+    unless it exceeds that.
+    """
+    by_case: dict[str, list[dict]] = {}
+    for row in rows:
+        by_case.setdefault(row["id"], []).append(row)
+
+    out: dict[str, dict] = {}
+    for case_id, runs in by_case.items():
+        ok = [r for r in runs if not r.get("error")]
+        entry: dict = {"runs": len(runs), "errors": len(runs) - len(ok),
+                       "category": runs[0]["category"]}
+        for metric in QUALITY_METRICS + COST_METRICS:
+            vals = [r[metric] for r in ok if r.get(metric) is not None]
+            entry[metric] = {
+                "median": _median(vals),
+                "min": min(vals) if vals else None,
+                "max": max(vals) if vals else None,
+                "spread": (max(vals) - min(vals)) if len(vals) > 1 else 0.0,
+                "n": len(vals),
+            }
+        for metric in RATE_METRICS:
+            vals = [1.0 if r.get(metric) else 0.0 for r in ok]
+            entry[metric] = {"median": (sum(vals) / len(vals)) if vals else None,
+                             "spread": (max(vals) - min(vals)) if len(vals) > 1 else 0.0,
+                             "n": len(vals)}
+        entry["forbidden_any"] = any(r["forbidden_cited"] for r in runs)
+        out[case_id] = entry
+    return out
+
+
+def noise_bands(per_case: dict[str, dict]) -> dict[str, float]:
+    """Typical within-case spread per metric: the floor for calling a delta real."""
+    bands: dict[str, float] = {}
+    for metric in QUALITY_METRICS + COST_METRICS + RATE_METRICS:
+        spreads = [c[metric]["spread"] for c in per_case.values()
+                   if c.get(metric) and c[metric].get("n", 0) > 1]
+        bands[metric] = round(_median(spreads) or 0.0, 4)
+    return bands
+
+
 def summarise(rows: list[dict]) -> dict:
-    def mean(key, subset=None):
-        pool = rows if subset is None else subset
-        vals = [r[key] for r in pool if r.get(key) is not None]
+    """Headline numbers, computed from per-case medians so one wild run cannot move them."""
+    per_case = aggregate_cases(rows)
+
+    def across(metric, only_graded=False):
+        vals = [c[metric]["median"] for cid, c in per_case.items()
+                if c[metric]["median"] is not None
+                and not (only_graded and c["category"] == "chat")]
         return round(sum(vals) / len(vals), 4) if vals else None
 
-    ok = [r for r in rows if not r.get("error")]
-    graded = [r for r in ok if r["category"] != "chat"]
+    ok_rows = [r for r in rows if not r.get("error")]
+    bands = noise_bands(per_case)
     return {
-        "cases": len(rows),
+        "cases": len(per_case),
+        "repeats": max((c["runs"] for c in per_case.values()), default=0),
+        "total_runs": len(rows),
         "errors": sum(1 for r in rows if r["error"]),
-        "section_recall": mean("section_recall", graded),
-        "act_recall": mean("act_recall", graded),
-        "citation_precision": mean("citation_precision", graded),
-        "forbidden_hits": sum(1 for r in rows if r["forbidden_cited"]),
-        "mean_total_s": mean("total_s", ok),
-        "mean_llm_calls": mean("llm_calls", ok),
-        "mean_retrieval_s": mean("retrieval_s", ok),
-        "fallback_rate": round(sum(r["used_fallback"] for r in ok) / len(ok), 4) if ok else None,
-        "retry_rate": round(sum(r["retried"] for r in ok) / len(ok), 4) if ok else None,
-        "scored_cases": len(ok),
+        "section_recall": across("section_recall", only_graded=True),
+        "act_recall": across("act_recall", only_graded=True),
+        "citation_precision": across("citation_precision", only_graded=True),
+        "forbidden_hits": sum(1 for c in per_case.values() if c["forbidden_any"]),
+        "mean_total_s": across("total_s"),
+        "mean_llm_calls": across("llm_calls"),
+        "mean_retrieval_s": across("retrieval_s"),
+        "fallback_rate": across("used_fallback"),
+        "retry_rate": across("retried"),
+        "scored_cases": len(ok_rows),
+        "noise": bands,
     }
 
 
@@ -170,6 +238,8 @@ def main() -> int:
     ap.add_argument("--label", required=True, help="name for this run, e.g. 'baseline'")
     ap.add_argument("--set", type=Path, default=PROJECT_ROOT / "eval" / "golden_set.yaml")
     ap.add_argument("--only", nargs="*", help="run only these case ids")
+    ap.add_argument("--repeats", type=int, default=3,
+                    help="runs per case; >1 lets compare.py separate signal from noise")
     ap.add_argument("--delay", type=float, default=5.0,
                     help="seconds to pause between cases; raise if you hit 429s")
     args = ap.parse_args()
@@ -182,33 +252,65 @@ def main() -> int:
 
     graph = build_graph()
     rows = []
-    for i, case in enumerate(cases, 1):
-        # follow-ups must share the thread of the case they depend on
-        thread = f"EVAL-{case.get('depends_on') or case['id']}"
-        print(f"[{i}/{len(cases)}] {case['id']}", flush=True)
-        rows.append(score_case(case, run_case(graph, case, thread)))
-        if i < len(cases) and args.delay:
-            time.sleep(args.delay)      # stay under provider rate limits
+    total = args.repeats * len(cases)
+    done = 0
+    # Repeats outer, cases inner: a follow-up case must run after the case it
+    # depends on WITHIN the same repeat, and each repeat gets its own threads so
+    # checkpoints never leak between them.
+    for rep in range(args.repeats):
+        if args.repeats > 1:
+            print(f"--- repeat {rep + 1}/{args.repeats} ---", flush=True)
+        for case in cases:
+            thread = f"EVAL-{case.get('depends_on') or case['id']}-r{rep}"
+            done += 1
+            print(f"[{done}/{total}] {case['id']}", flush=True)
+            row = score_case(case, run_case(graph, case, thread))
+            row["repeat"] = rep
+            rows.append(row)
+            if done < total and args.delay:
+                time.sleep(args.delay)      # stay under provider rate limits
 
     summary = summarise(rows)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     out = RESULTS_DIR / f"{args.label}.json"
-    out.write_text(json.dumps({"label": args.label, "summary": summary, "rows": rows},
+    out.write_text(json.dumps({"label": args.label, "summary": summary,
+                               "per_case": aggregate_cases(rows), "rows": rows},
                               indent=2, ensure_ascii=False), encoding="utf-8")
 
     print("\n" + "=" * 68)
-    print(f" {args.label}")
+    print(f" {args.label}   ({summary['repeats']} run(s) x {summary['cases']} cases)")
     print("=" * 68)
-    for k, v in summary.items():
-        print(f"  {k:<22} {v}")
+    for key, value in summary.items():
+        if key == "noise":
+            continue
+        print(f"  {key:<22} {value}")
+
+    print("\n  within-case spread (max-min across repeats) - the noise floor:")
+    for metric, band in summary["noise"].items():
+        print(f"    {metric:<20} {band}")
+    if summary["repeats"] < 2:
+        print("    (only 1 repeat - spreads are 0 and compare.py cannot gauge noise;"
+              " re-run with --repeats 3)")
+
     print(f"\n  written to {out.relative_to(PROJECT_ROOT)}")
 
-    worst = sorted((r for r in rows if r["section_recall"] is not None),
-                   key=lambda r: r["section_recall"])[:5]
+    per_case = aggregate_cases(rows)
+    graded = [(cid, c) for cid, c in per_case.items()
+              if c["category"] != "chat" and c["section_recall"]["median"] is not None]
+    worst = sorted(graded, key=lambda kv: kv[1]["section_recall"]["median"])[:5]
     if worst:
-        print("\n  weakest retrieval:")
-        for r in worst:
-            print(f"    {r['section_recall']:.2f}  {r['id']:<26} missing: {', '.join(r['missing']) or '-'}")
+        print("\n  weakest retrieval (median, with observed range):")
+        for cid, c in worst:
+            sr = c["section_recall"]
+            rng = f"{sr['min']:.2f}-{sr['max']:.2f}" if sr["n"] > 1 else "single run"
+            flag = "  UNSTABLE" if sr["spread"] and sr["spread"] >= 0.5 else ""
+            print(f"    {sr['median']:.2f}  [{rng}]  {cid}{flag}")
+
+    unstable = [cid for cid, c in per_case.items()
+                if c["act_recall"]["spread"] and c["act_recall"]["spread"] >= 0.5]
+    if unstable:
+        print(f"\n  {len(unstable)} case(s) returned different Acts across repeats: "
+              f"{', '.join(unstable)}")
     return 0
 
 

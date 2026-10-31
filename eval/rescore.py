@@ -27,7 +27,7 @@ def main() -> int:
 
     from eval.metrics import (parse_verified_references, retrieval_score,
                               citation_score, forbidden_citations)
-    from eval.run_eval import summarise
+    from eval.run_eval import summarise, aggregate_cases
     import yaml
 
     data = json.loads(args.results.read_text(encoding="utf-8"))
@@ -71,11 +71,13 @@ def main() -> int:
         })
 
     data["summary"] = summarise(data["rows"])
+    data["per_case"] = aggregate_cases(data["rows"])
     out = args.out or args.results
     out.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"rescored -> {out}")
     for k, v in data["summary"].items():
-        print(f"  {k:<22} {v}")
+        if k != "noise":
+            print(f"  {k:<22} {v}")
     return 0
 
 

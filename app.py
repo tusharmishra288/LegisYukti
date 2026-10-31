@@ -36,7 +36,7 @@ if st.query_params.get("health") == "true":
 
 # Auto-scroll JavaScript injection for smooth conversation flow
 # Monitors DOM changes and automatically scrolls to show latest messages
-st.components.v1.html("""<script>var body = window.parent.document.querySelector(".main");new MutationObserver(function() {body.scrollTop = body.scrollHeight;}).observe(body, {attributes: true, childList: true, subtree: true});</script>""", height=0)
+st.iframe("""<script>var body = window.parent.document.querySelector(".main");new MutationObserver(function() {body.scrollTop = body.scrollHeight;}).observe(body, {attributes: true, childList: true, subtree: true});</script>""", height=1)
 
 # Professional UI styling with dark theme and legal color scheme
 st.markdown("""

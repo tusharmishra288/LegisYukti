@@ -14,7 +14,8 @@ on:
   schedule:
     # Every 6 hours. Well inside Qdrant's 1-week suspension window, with enough
     # headroom to absorb GitHub's best-effort cron delays and a few failed runs.
-    - cron: '0 */6 * * *'
+    # Off the top of the hour: GitHub delays/drops many ':00' schedules under load.
+    - cron: '23 */6 * * *'
   workflow_dispatch:  # Manual run — also re-arms the schedule if GitHub disables
                       # it after 60 days of repository inactivity.
 
