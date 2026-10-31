@@ -36,12 +36,53 @@ os.environ["HF_HOME"] = str(CACHE_DIR / "huggingface")
 os.environ["FASTEMBED_CACHE_PATH"] = str(CACHE_DIR / "fastembed")
 
 # --- Hardware Detection ---
-# Auto-detect CUDA for GPU acceleration in embeddings and processing
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+# Order of preference: an explicit DEVICE_TYPE override, then CUDA (Linux/Windows
+# with an NVIDIA card), then MPS (Apple Silicon), then CPU.
+#
+# DEVICE_TYPE was already being set in docker-compose.yml but nothing ever read
+# it; it is now the supported override. An override naming an unavailable backend
+# warns and falls back rather than crashing, so a .env copied between machines
+# does not break the app.
+def _detect_device() -> str:
+    requested = (os.getenv("DEVICE_TYPE") or "").strip().lower()
+
+    def available(name: str) -> bool:
+        if name == "cuda":
+            return torch.cuda.is_available()
+        if name == "mps":
+            # Apple Silicon GPU. getattr guards torch builds without the backend.
+            mps = getattr(torch.backends, "mps", None)
+            return bool(mps and mps.is_available() and mps.is_built())
+        return name == "cpu"
+
+    if requested:
+        if requested in ("cuda", "mps", "cpu") and available(requested):
+            return requested
+        logger.warning(
+            f"⚠️ DEVICE_TYPE={requested!r} requested but unavailable on this machine - auto-detecting."
+        )
+    for candidate in ("cuda", "mps"):
+        if available(candidate):
+            return candidate
+    return "cpu"
+
+
+DEVICE = _detect_device()
 
 # --- Model Selection ---
 # High-quality embedding model for legal text semantic search
 EMBED_MODEL_ID = "intfloat/e5-small-v2"
+
+# Groq model IDs. Overridable from .env because Groq retires models on a rolling
+# basis - a deprecation should be a config change, not a code change. Check what
+# your account can actually serve with:
+#   curl -s https://api.groq.com/openai/v1/models \
+#        -H "Authorization: Bearer $GROQ_API_KEY" | jq -r '.data[].id' | sort
+# Hardcoded values ship with the image and reach Hugging Face; the env override
+# is there so a Groq retirement can be worked around from Space settings without
+# a redeploy. Blank or absent both fall through to the default.
+GROQ_MODEL_PRIMARY = (os.getenv("GROQ_MODEL_PRIMARY") or "").strip() or "openai/gpt-oss-120b"
+GROQ_MODEL_FAST = (os.getenv("GROQ_MODEL_FAST") or "").strip() or "openai/gpt-oss-20b"
 
 # Fallback message when no relevant legal context is found
 NO_CONTEXT_MSG = "I could not find any legally verified references for this specific query."
@@ -64,11 +105,14 @@ else:
     logger.success("🔑 HuggingFace Token authenticated.")
 
 logger.info(f"🖥️  Hardware Acceleration: {DEVICE.upper()} detected.")
+if DEVICE == "mps":
+    # FlashRank runs on ONNX Runtime (CPU only), so reranking does not benefit.
+    logger.info("🍎 Apple Silicon GPU in use for embeddings. Note: FlashRank reranking stays on CPU.")
 
 # --- LLM Model Configurations ---
 # Primary legal reasoning model: High-capability for complex legal analysis
 llm = ChatGroq(
-    model_name="llama-3.3-70b-versatile",
+    model_name=GROQ_MODEL_PRIMARY,
     temperature=0,  # Deterministic responses for legal accuracy
     api_key=GROQ_API_KEY,
     max_tokens=800,  # Sufficient for detailed legal explanations
@@ -77,7 +121,7 @@ llm = ChatGroq(
 
 # Fast utility model: Optimized for quick query expansion and internal processing
 fast_llm = ChatGroq(
-    model_name="llama-3.1-8b-instant",
+    model_name=GROQ_MODEL_FAST,
     temperature=0,  # Consistent query transformations
     api_key=GROQ_API_KEY,
     max_tokens=1024,  # Longer context for query expansion
