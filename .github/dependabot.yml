@@ -1,0 +1,15 @@
+# One grouped PR for all Python security fixes instead of one PR per package.
+# Separate PRs each rewrite uv.lock; merging several in a row produced a
+# corrupt lockfile on 2026-10-31. A single PR keeps uv.lock consistent.
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # 0 = no routine version-bump PRs; security-update PRs are still opened.
+    open-pull-requests-limit: 0
+    groups:
+      security-fixes:
+        applies-to: security-updates
+        patterns: ["*"]
