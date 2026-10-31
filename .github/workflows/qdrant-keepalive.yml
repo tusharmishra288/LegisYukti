@@ -19,6 +19,11 @@ on:
   workflow_dispatch:  # Manual run — also re-arms the schedule if GitHub disables
                       # it after 60 days of repository inactivity.
 
+# actions:write lets the last step re-enable this workflow via the API, which
+# resets GitHub's 60-day inactivity timer for scheduled workflows.
+permissions:
+  actions: write
+
 # Prevent overlapping runs if a wake-up takes longer than expected.
 concurrency:
   group: qdrant-keepalive
@@ -133,3 +138,16 @@ jobs:
           if [ "$POINTS" = "0" ]; then
             echo "::warning::Cluster is alive but the collection is EMPTY — the legal corpus needs re-ingestion."
           fi
+
+      - name: Keep this schedule from being auto-disabled
+        # GitHub disables scheduled workflows after 60 days without repository
+        # activity. Re-enabling via the API resets that timer, so the heartbeat
+        # survives long quiet periods with no dummy commits (which would also
+        # trigger a Hugging Face redeploy). Runs even if the ping failed.
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -X PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/qdrant-keepalive.yml/enable" \
+            && echo "Schedule re-armed; 60-day inactivity timer reset." \
+            || echo "::warning::Could not re-enable workflow via API."
